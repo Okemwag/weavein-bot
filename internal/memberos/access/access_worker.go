@@ -1,0 +1,161 @@
+package access
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"memberos/internal/store"
+	"net/url"
+	"strconv"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func (s Service) RunJobs(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			for i := 0; i < 10; i++ {
+				more, err := s.ProcessOne(ctx)
+				if err != nil {
+					slog.Error("access job failed", "error", err)
+					break
+				}
+				if !more {
+					break
+				}
+			}
+		}
+	}
+}
+
+func (s Service) ProcessOne(ctx context.Context) (bool, error) {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var jobID, communityID, action string
+	var userID int64
+	var attempts int
+	err = tx.QueryRow(ctx, `SELECT id,community_id,telegram_user_id,action,attempts FROM access_jobs
+        WHERE status='pending' AND run_after<=now() ORDER BY run_after,id LIMIT 1 FOR UPDATE SKIP LOCKED`).
+		Scan(&jobID, &communityID, &userID, &action, &attempts)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var chatID, botID int64
+	err = tx.QueryRow(ctx, `SELECT telegram_chat_id,billing_bot_id FROM communities
+        WHERE id=$1 AND billing_mode='managed_bot'`, communityID).Scan(&chatID, &botID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, finishJob(ctx, tx, jobID, "failed", "community is not managed")
+	}
+	if err != nil {
+		return false, err
+	}
+	if botID != s.BotID {
+		return true, finishJob(ctx, tx, jobID, "failed", "bot identity mismatch")
+	}
+	if err := store.LockAccess(ctx, tx, communityID, userID); err != nil {
+		return false, err
+	}
+	var eligible bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM entitlements
+        WHERE community_id=$1 AND telegram_user_id=$2 AND status='active' AND valid_until>now())`, communityID, userID).Scan(&eligible); err != nil {
+		return false, err
+	}
+	if action == "approve" && !eligible {
+		return true, finishJob(ctx, tx, jobID, "done", "no current entitlement")
+	}
+	if action == "remove" && eligible {
+		return true, finishJob(ctx, tx, jobID, "done", "another entitlement grants access")
+	}
+	member, err := s.Telegram.GetChatMember(ctx, chatID, userID)
+	if err != nil {
+		return true, retryJob(ctx, tx, jobID, attempts, err.Error())
+	}
+	if member.Status == "creator" || member.Status == "administrator" {
+		return true, finishJob(ctx, tx, jobID, "done", "creator or administrator protected")
+	}
+	switch action {
+	case "approve":
+		if member.Status == "member" {
+			return true, finishJob(ctx, tx, jobID, "done", "")
+		}
+		if member.Status == "kicked" {
+			var ok bool
+			err = s.Telegram.Call(ctx, "unbanChatMember", url.Values{
+				"chat_id": {strconv.FormatInt(chatID, 10)}, "user_id": {strconv.FormatInt(userID, 10)}, "only_if_banned": {"true"},
+			}, &ok)
+			if err != nil || !ok {
+				return true, retryJob(ctx, tx, jobID, attempts, "Telegram unban failed")
+			}
+			return true, finishJob(ctx, tx, jobID, "done", "unbanned; member must request to join again")
+		}
+		var pending bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM join_requests WHERE community_id=$1
+            AND telegram_user_id=$2 AND status='pending')`, communityID, userID).Scan(&pending); err != nil {
+			return false, err
+		}
+		if !pending {
+			return true, finishJob(ctx, tx, jobID, "done", "no pending join request")
+		}
+		var ok bool
+		err = s.Telegram.Call(ctx, "approveChatJoinRequest", url.Values{
+			"chat_id": {strconv.FormatInt(chatID, 10)}, "user_id": {strconv.FormatInt(userID, 10)},
+		}, &ok)
+		if err != nil || !ok {
+			return true, retryJob(ctx, tx, jobID, attempts, "Telegram approval failed")
+		}
+		if _, err := tx.Exec(ctx, `UPDATE join_requests SET status='approved' WHERE community_id=$1 AND telegram_user_id=$2`, communityID, userID); err != nil {
+			return false, err
+		}
+		return true, finishJob(ctx, tx, jobID, "done", "")
+	case "remove":
+		if member.Status == "left" || member.Status == "kicked" {
+			return true, finishJob(ctx, tx, jobID, "done", "")
+		}
+		var ok bool
+		err = s.Telegram.Call(ctx, "banChatMember", url.Values{
+			"chat_id": {strconv.FormatInt(chatID, 10)}, "user_id": {strconv.FormatInt(userID, 10)},
+		}, &ok)
+		if err != nil || !ok {
+			return true, retryJob(ctx, tx, jobID, attempts, "Telegram removal failed")
+		}
+		return true, finishJob(ctx, tx, jobID, "done", "")
+	default:
+		return true, finishJob(ctx, tx, jobID, "failed", "unknown access action")
+	}
+}
+
+func finishJob(ctx context.Context, tx pgx.Tx, id, state, reason string) error {
+	_, err := tx.Exec(ctx, `UPDATE access_jobs SET status=$2,last_error=NULLIF($3,''),finished_at=now() WHERE id=$1`, id, state, reason)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func retryJob(ctx context.Context, tx pgx.Tx, id string, attempts int, reason string) error {
+	next := attempts + 1
+	status := "pending"
+	if next >= 5 {
+		status = "failed"
+	}
+	delay := time.Duration(1<<min(next, 6)) * time.Second
+	_, err := tx.Exec(ctx, `UPDATE access_jobs SET status=$2,attempts=$3,last_error=$4,run_after=$5,
+        finished_at=CASE WHEN $2='failed' THEN now() ELSE NULL END WHERE id=$1`,
+		id, status, next, reason, time.Now().Add(delay))
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
