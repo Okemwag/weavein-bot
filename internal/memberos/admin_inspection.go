@@ -125,7 +125,8 @@ func (a *app) adminHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"pending_updates": pendingUpdates, "failed_updates": failedUpdates, "pending_access_jobs": pendingJobs,
-		"failed_access_jobs": failedJobs, "failed_notifications": failedNotices, "open_support_tickets": openTickets, "unhealthy_communities": communities})
+		"failed_access_jobs": failedJobs, "failed_notifications": failedNotices, "open_support_tickets": openTickets,
+		"unhealthy_communities": communities, "telegram_webhook": a.webhookHealth(r.Context())})
 }
 
 func (a *app) adminAudit(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +164,7 @@ func (a *app) adminSupportTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := a.db.Query(r.Context(), `SELECT t.id,t.telegram_user_id,t.kind,t.description,t.status,t.created_at,
+		t.escalated_at,t.assigned_operator_id,t.escalation_reason,
  c.id,c.title,cr.support_contact FROM support_tickets t JOIN communities c ON c.id=t.community_id
  JOIN creators cr ON cr.id=c.creator_id WHERE t.status<>'resolved' ORDER BY t.created_at LIMIT 100`)
 	if err != nil {
@@ -175,12 +177,18 @@ func (a *app) adminSupportTickets(w http.ResponseWriter, r *http.Request) {
 		var id, kind, description, status, community, title, contact string
 		var user int64
 		var at time.Time
-		if rows.Scan(&id, &user, &kind, &description, &status, &at, &community, &title, &contact) != nil {
+		var escalatedAt *time.Time
+		var assigned *int64
+		var reason *string
+		if rows.Scan(&id, &user, &kind, &description, &status, &at, &escalatedAt, &assigned, &reason,
+			&community, &title, &contact) != nil {
 			http.Error(w, "database error", 500)
 			return
 		}
 		items = append(items, map[string]any{"id": id, "telegram_user_id": user, "kind": kind, "description": description, "status": status,
-			"created_at": at, "escalated": at.Before(time.Now().Add(-48 * time.Hour)), "community_id": community, "community_title": title, "support_contact": contact})
+			"created_at": at, "escalation_due": escalatedAt == nil && at.Before(time.Now().Add(-48*time.Hour)),
+			"escalated_at": escalatedAt, "assigned_operator_id": assigned, "escalation_reason": reason,
+			"community_id": community, "community_title": title, "support_contact": contact})
 	}
 	if rows.Err() != nil {
 		http.Error(w, "database error", 500)

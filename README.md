@@ -46,6 +46,7 @@ Go and PostgreSQL service for Telegram paid-community membership. The [product i
 - Studio also shows a searchable member directory, profile history, access overrides, verified payment records, support requests, CSV exports, and date-filtered observed metrics. The protected Ops screen exposes failed work, incident search, connection health, and Stars discrepancies.
 - The public homepage at `/` explains the product and offers an interactive walkthrough and creator inquiry form. Ops can review those inquiries. Creators can save category, rules, and content guidance for subscriber onboarding.
 - A free MemberOS account allows one connected community. An operator can grant a recorded pilot allowance; the database enforces its community limit. Paid MemberOS SaaS billing is not configured.
+- Ops now provides recent webhook history, live webhook status inspection, assigned support escalation, audited dispute evidence, and a separate empty SaaS finance view. Studio can recheck degraded bot permissions and requeue failed access work.
 
 Managed mode uses the one configured bot per service deployment as the Stars recipient. The operator must verify that the bot belongs to the creator before enabling it. Automated creator-owned bot onboarding, retention campaigns, and Telegram live-flow validation are still outstanding. Financial dashboard figures cover only bot events recorded by MemberOS; the Ops reconciliation can compare those records with bot transaction observations, but no live reconciliation has been verified.
 
@@ -103,6 +104,8 @@ Set Telegram's Mini App URL to `https://YOUR_DOMAIN/app/`. A direct community li
 | --- | --- |
 | `GET /health/live` | Process liveness |
 | `GET /health/ready` | PostgreSQL readiness |
+| `GET /` | Public MemberOS homepage, walkthrough, and creator contact entry |
+| `POST /api/v1/creator-inquiries` | Rate-limited public creator inquiry intake |
 | `POST /api/v1/telegram/session` | JSON `{ "init_data": "..." }`; returns bearer token |
 | `GET /api/v1/communities/{id}` | Published channel profile, Stars price, native subscription link, seller/support |
 | `GET /api/v1/me/membership?community_id={id}` | Bearer session required; live or last known Telegram access observation |

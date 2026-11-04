@@ -182,5 +182,27 @@ func (a *app) recheckCommunity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "webhook configuration failed; retry later", http.StatusBadGateway)
 		return
 	}
+	if mode == "managed_bot" {
+		tx, err := a.db.Begin(r.Context())
+		if err != nil {
+			http.Error(w, "connection repaired; retry queue unavailable", 500)
+			return
+		}
+		defer func() { _ = tx.Rollback(r.Context()) }()
+		if _, err := tx.Exec(r.Context(), `UPDATE access_jobs SET status='pending',attempts=0,
+			last_error=NULL,finished_at=NULL,run_after=now() WHERE community_id=$1 AND status='failed'`, communityID); err != nil {
+			http.Error(w, "connection repaired; retry queue unavailable", 500)
+			return
+		}
+		if _, err := tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
+			VALUES($1,'community_connection_repaired',jsonb_build_object('community_id',$2))`, ownerID, communityID); err != nil {
+			http.Error(w, "connection repaired; audit unavailable", 500)
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			http.Error(w, "connection repaired; retry queue unavailable", 500)
+			return
+		}
+	}
 	writeJSON(w, 200, map[string]any{"id": communityID, "status": "published"})
 }

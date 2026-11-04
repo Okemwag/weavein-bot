@@ -39,6 +39,12 @@ async function loadOperations() {
         action('Retry', `/api/v1/admin/updates/${item.bot_id}/${item.update_id}/retry`));
       return row;
     });
+    section('Recent webhook history', updates.recent || [], (item) => {
+      const row = node('div', 'member-row');
+      row.append(node('strong', '', `${item.type} · update ${item.update_id}`),
+        node('small', '', `${item.state} · received ${date(item.received_at)} · attempts ${item.attempts}${item.error ? ' · ' + item.error : ''}`));
+      return row;
+    });
     section('Failed access jobs', jobs.jobs, (item) => {
       const row = node('div', 'member-row');
       row.append(node('strong', '', `${item.action} · user ${item.telegram_user_id}`),

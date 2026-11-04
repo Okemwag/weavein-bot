@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"memberos/internal/eventing"
 	"memberos/internal/memberos/billing"
-	"memberos/internal/notify"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,7 +21,8 @@ func (a *app) processJoinRequest(ctx context.Context, tx pgx.Tx, updateID int64,
 			From struct {
 				ID int64 `json:"id"`
 			} `json:"from"`
-			Date int64 `json:"date"`
+			Date       int64 `json:"date"`
+			UserChatID int64 `json:"user_chat_id"`
 		} `json:"chat_join_request"`
 	}
 	if json.Unmarshal(raw, &wrapper) != nil {
@@ -44,9 +44,10 @@ func (a *app) processJoinRequest(ctx context.Context, tx pgx.Tx, updateID int64,
 	if requestedAt.After(time.Now().Add(time.Minute)) {
 		return eventing.InvalidEvent("join request from future")
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO join_requests(community_id,telegram_user_id,requested_at,status)
-        VALUES($1,$2,$3,'pending') ON CONFLICT (community_id,telegram_user_id)
-        DO UPDATE SET requested_at=EXCLUDED.requested_at,status='pending'`, communityID, req.From.ID, requestedAt)
+	_, err = tx.Exec(ctx, `INSERT INTO join_requests(community_id,telegram_user_id,requested_at,status,user_chat_id)
+		VALUES($1,$2,$3,'pending',$4) ON CONFLICT (community_id,telegram_user_id)
+		DO UPDATE SET requested_at=EXCLUDED.requested_at,status='pending',user_chat_id=EXCLUDED.user_chat_id,
+		guidance_attempted_at=NULL`, communityID, req.From.ID, requestedAt, req.UserChatID)
 	if err != nil {
 		return err
 	}
@@ -66,12 +67,6 @@ func (a *app) processJoinRequest(ctx context.Context, tx pgx.Tx, updateID int64,
         VALUES($1,$2,$3,$4) ON CONFLICT (dedupe_key) DO NOTHING`, communityID, req.From.ID, action, fmt.Sprintf("%s:join:%d", action, updateID))
 	if err != nil {
 		return err
-	}
-	if !eligible {
-		if err := notify.Queue(ctx, tx, a.cfg.botID, req.From.ID, fmt.Sprintf("join-ineligible:%d", updateID),
-			"Your community join request needs an active membership. Open MemberOS to subscribe, then request access again. Contact support if you already paid."); err != nil {
-			return err
-		}
 	}
 	return billing.AuditEvent(ctx, tx, creatorID, req.From.ID, "join_requested", updateID)
 }

@@ -45,7 +45,33 @@ func (a *app) adminUpdates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", 500)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"updates": items})
+	recentRows, err := a.db.Query(r.Context(), `SELECT bot_id,update_id,update_type,state,attempts,last_error,
+		received_at,processed_at FROM telegram_updates ORDER BY received_at DESC LIMIT 100`)
+	if err != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	defer recentRows.Close()
+	recent := make([]map[string]any, 0)
+	for recentRows.Next() {
+		var botID, updateID int64
+		var kind, state string
+		var attempts int
+		var reason *string
+		var received time.Time
+		var processed *time.Time
+		if recentRows.Scan(&botID, &updateID, &kind, &state, &attempts, &reason, &received, &processed) != nil {
+			http.Error(w, "database error", 500)
+			return
+		}
+		recent = append(recent, map[string]any{"bot_id": botID, "update_id": updateID, "type": kind,
+			"state": state, "attempts": attempts, "error": reason, "received_at": received, "processed_at": processed})
+	}
+	if recentRows.Err() != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"updates": items, "recent": recent, "coverage": "latest 100 stored Telegram updates; payloads withheld"})
 }
 
 func (a *app) adminRetryUpdate(w http.ResponseWriter, r *http.Request) {

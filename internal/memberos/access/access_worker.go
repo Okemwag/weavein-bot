@@ -3,11 +3,13 @@ package access
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"memberos/internal/notify"
 	"memberos/internal/store"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -152,6 +154,40 @@ func (s Service) ProcessOne(ctx context.Context) (bool, error) {
 		}
 		if !pending {
 			return true, finishJob(ctx, tx, jobID, "done", "no pending join request")
+		}
+		var userChatID *int64
+		var requestedAt time.Time
+		var guidanceAttempted *time.Time
+		if err := tx.QueryRow(ctx, `SELECT user_chat_id,requested_at,guidance_attempted_at FROM join_requests
+			WHERE community_id=$1 AND telegram_user_id=$2 FOR UPDATE`, communityID, userID).
+			Scan(&userChatID, &requestedAt, &guidanceAttempted); err != nil {
+			return false, err
+		}
+		if guidanceAttempted == nil {
+			message := "Your community join request needs an active membership. Open MemberOS to subscribe, then request access again. Contact support if you already paid."
+			if strings.HasPrefix(s.AppOrigin, "https://") {
+				message += " Rejoin: " + strings.TrimRight(s.AppOrigin, "/") + "/app/?community=" + url.QueryEscape(communityID)
+			}
+			sent := false
+			if userChatID != nil && *userChatID > 0 && time.Since(requestedAt) < 5*time.Minute {
+				var reply struct {
+					MessageID int64 `json:"message_id"`
+				}
+				if err := s.Telegram.Call(ctx, "sendMessage", url.Values{
+					"chat_id": {strconv.FormatInt(*userChatID, 10)}, "text": {message},
+				}, &reply); err == nil && reply.MessageID > 0 {
+					sent = true
+				}
+			}
+			if !sent {
+				if err := notify.Queue(ctx, tx, s.BotID, userID, fmt.Sprintf("join-ineligible:%s:%d", communityID, requestedAt.Unix()), message); err != nil {
+					return false, err
+				}
+			}
+			if _, err := tx.Exec(ctx, `UPDATE join_requests SET guidance_attempted_at=now()
+				WHERE community_id=$1 AND telegram_user_id=$2`, communityID, userID); err != nil {
+				return false, err
+			}
 		}
 		var ok bool
 		err = s.Telegram.Call(ctx, "declineChatJoinRequest", url.Values{

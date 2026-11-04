@@ -70,6 +70,21 @@ async function renderStudioSetup() {
   const steps = node('ol', 'setup-steps');
   for (const step of progress.steps) steps.append(node('li', step.complete ? 'done' : '', `${step.complete ? '✓' : '○'} ${step.label}`));
   checklist.append(steps);
+  const nextStep = progress.steps.find((step) => !step.complete);
+  if (nextStep) {
+    const next = node('button', 'button secondary', `Continue: ${nextStep.label}`);
+    next.type = 'button';
+    next.addEventListener('click', () => {
+      if (nextStep.key === 'profile') {
+        const panel = setup.querySelector('#creator-profile-step'); panel.open = true; panel.scrollIntoView({ behavior: 'smooth' });
+      } else if (nextStep.key === 'connection') {
+        const panel = setup.querySelector('#community-connection-step'); panel.open = true; panel.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        byId('studio-content').scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+    checklist.append(next);
+  }
   setup.append(checklist);
   try {
     const account = await api(`/api/v1/creator/workspaces/${encodeURIComponent(active.id)}/saas`);
@@ -84,6 +99,7 @@ async function renderStudioSetup() {
   } catch (error) { setup.append(node('p', 'muted', `MemberOS plan unavailable: ${error.message}`)); }
   if (active.role !== 'owner') return;
   const profile = node('details', 'detail-card setup-details');
+  profile.id = 'creator-profile-step';
   profile.append(node('summary', '', 'Creator profile and support contact'));
   const profileForm = node('form', 'setup-form');
   profileForm.append(formField('Business or creator name', 'name', 'text', true, active.name),
@@ -133,6 +149,7 @@ async function renderStudioSetup() {
   });
   settings.append(settingsForm, deleteRequest); setup.append(settings);
   const connection = node('details', 'detail-card setup-details');
+  connection.id = 'community-connection-step';
   connection.open = progress.connected_communities === 0;
   connection.append(node('summary', '', 'Connect another private community'));
   const form = node('form', 'setup-form');
@@ -300,6 +317,18 @@ async function renderStudio(id) {
         catch (error) { notice(error.message, true); }
       });
       content.append(node('p', 'muted', 'This community is saved as a draft. Subscriber sales are not active.'), repair);
+    }
+    if (chosen?.status === 'published' && chosen.mode === 'managed_bot' && ['degraded', 'disconnected'].includes(chosen.connection_status)) {
+      const repair = node('button', 'button secondary full', 'Recheck bot permissions and retry access');
+      repair.type = 'button';
+      repair.addEventListener('click', async () => {
+        repair.disabled = true;
+        try {
+          await api(`/api/v1/creator/communities/${encodeURIComponent(id)}/recheck`, { method: 'POST' });
+          notice('Bot permissions verified. Failed access work has been requeued.'); await loadStudio();
+        } catch (error) { notice(error.message, true); repair.disabled = false; }
+      });
+      content.append(repair);
     }
     if (chosen?.mode === 'managed_bot') {
       const range = node('form', 'report-filters');

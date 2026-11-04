@@ -10,10 +10,10 @@ function section(content, title, items, render) {
 }
 
 async function renderInspection(content) {
-  const [health, creators, tickets, audit, inquiries] = await Promise.all([
+  const [health, creators, tickets, audit, inquiries, saas] = await Promise.all([
     api('/api/v1/admin/health'), api('/api/v1/admin/creators'),
     api('/api/v1/admin/support-tickets'), api('/api/v1/admin/audit'),
-    api('/api/v1/admin/creator-inquiries'),
+    api('/api/v1/admin/creator-inquiries'), api('/api/v1/admin/saas-finance'),
   ]);
   const summary = node('div', 'metric-grid');
   for (const [label, value] of [['Pending updates', health.pending_updates],
@@ -24,6 +24,17 @@ async function renderInspection(content) {
     summary.append(metric);
   }
   content.append(node('div', 'divider'), node('h2', '', 'Integration health'), summary);
+  const saasCard = node('div', 'detail-card');
+  saasCard.append(node('strong', '', 'MemberOS SaaS revenue'),
+    node('p', 'muted', saas.saas_revenue.length
+      ? saas.saas_revenue.map((item) => `${item.currency} ${item.net_minor} minor units from ${item.events} recorded events`).join(' · ')
+      : 'No paid MemberOS SaaS provider is connected; no SaaS revenue is recorded.'));
+  content.append(saasCard);
+  const webhook = health.telegram_webhook || {};
+  const webhookCard = node('div', 'detail-card');
+  webhookCard.append(node('strong', '', 'Telegram webhook · ' + (webhook.status || 'unknown')),
+    node('p', 'muted', `${webhook.pending_updates ?? 'Unknown'} updates awaiting Telegram delivery${webhook.last_error ? ' · ' + webhook.last_error : ''}`));
+  content.append(webhookCard);
   section(content, 'Communities needing attention', health.unhealthy_communities, (item) => {
     const row = node('div', 'member-row');
     row.append(node('strong', '', item.title + ' · ' + item.status), node('small', '', item.error || 'Connection has not been checked yet'));
@@ -38,7 +49,32 @@ async function renderInspection(content) {
   section(content, 'Open support and escalations', tickets.tickets, (item) => {
     const row = node('div', 'member-row');
     row.append(node('strong', '', item.community_title + ' · user ' + item.telegram_user_id),
-      node('small', '', (item.escalated ? 'Escalated · ' : '') + item.kind + ' · ' + item.description));
+      node('small', '', (item.escalated_at ? 'Escalated · ' : item.escalation_due ? 'Escalation due · ' : '') + item.kind + ' · ' + item.description));
+    if (!item.escalated_at) {
+      const escalate = node('button', 'button secondary', 'Escalate'); escalate.type = 'button';
+      escalate.addEventListener('click', async () => {
+        const reason = window.prompt('Why does this ticket need operator escalation?');
+        if (!reason) return;
+        try {
+          await api('/api/v1/admin/support-tickets/' + encodeURIComponent(item.id) + '/escalate',
+            { method: 'POST', body: JSON.stringify({ reason }) });
+          notice('Escalation recorded.'); escalate.remove();
+        } catch (error) { notice(error.message, true); }
+      });
+      row.append(escalate);
+    }
+    const evidenceButton = node('button', 'button secondary', 'View evidence'); evidenceButton.type = 'button';
+    evidenceButton.addEventListener('click', async () => {
+      evidenceButton.disabled = true;
+      try {
+        const result = await api('/api/v1/admin/support-tickets/' + encodeURIComponent(item.id) + '/evidence');
+        const details = node('details', 'detail-card'); details.open = true;
+        details.append(node('summary', '', 'Known payment and access evidence'),
+          node('pre', '', JSON.stringify(result.evidence, null, 2)));
+        row.append(details);
+      } catch (error) { notice(error.message, true); evidenceButton.disabled = false; }
+    });
+    row.append(evidenceButton);
     const resolve = node('button', 'button secondary', 'Resolve'); resolve.type = 'button';
     resolve.addEventListener('click', async () => {
       const resolution = window.prompt('How was this issue resolved?');
