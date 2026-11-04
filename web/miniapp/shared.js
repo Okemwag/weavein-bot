@@ -1,6 +1,6 @@
 const tg = window.Telegram?.WebApp;
 const state = { token: '', communities: [], workspaces: [], activeWorkspaceId: null, activeCommunityId: null,
-  creatorCommunities: [], selected: null, selectedPlan: null, plans: [], profile: null, membership: null, view: 'discover' };
+  creatorCommunities: [], selected: null, selectedPlan: null, plans: [], profile: null, membership: null, checkout: null, notificationPrefs: null, view: 'discover' };
 const byId = (id) => document.getElementById(id);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -33,7 +33,7 @@ async function api(path, options = {}) {
 
 function show(view) {
   state.view = view;
-  for (const name of ['discover', 'membership', 'studio']) {
+  for (const name of ['discover', 'membership', 'studio', 'operations']) {
     byId(name).hidden = name !== view;
     const tab = byId(`tab-${name}`);
     tab.classList.toggle('active', name === view);

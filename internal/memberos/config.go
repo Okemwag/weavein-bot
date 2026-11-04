@@ -17,7 +17,8 @@ type config struct {
 	botRecipientAck    string
 	managedWorkspaceID string
 	publicWebhookURL   string
-	adminTelegramID     int64
+	botUsername        string
+	adminTelegramID    int64
 }
 
 func loadConfig() (config, error) {
@@ -31,6 +32,7 @@ func loadConfig() (config, error) {
 		botRecipientAck:    os.Getenv("BOT_STARS_RECIPIENT_ACK"),
 		managedWorkspaceID: os.Getenv("MANAGED_BILLING_WORKSPACE_ID"),
 		publicWebhookURL:   os.Getenv("PUBLIC_WEBHOOK_URL"),
+		botUsername:        os.Getenv("TELEGRAM_BOT_USERNAME"),
 	}
 	if c.address == "" {
 		c.address = ":8080"

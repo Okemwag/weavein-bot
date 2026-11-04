@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"memberos/internal/notify"
 	"memberos/internal/store"
 	"net/url"
 	"strconv"
@@ -69,7 +70,9 @@ func (s Service) ProcessOne(ctx context.Context) (bool, error) {
 	}
 	var eligible bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM entitlements
-        WHERE community_id=$1 AND telegram_user_id=$2 AND status='active' AND valid_until>now())`, communityID, userID).Scan(&eligible); err != nil {
+        WHERE community_id=$1 AND telegram_user_id=$2 AND status='active' AND valid_until>now())
+        OR EXISTS(SELECT 1 FROM access_overrides WHERE community_id=$1 AND telegram_user_id=$2
+        AND active=true AND valid_until>now())`, communityID, userID).Scan(&eligible); err != nil {
 		return false, err
 	}
 	if action == "approve" && !eligible {
@@ -77,6 +80,9 @@ func (s Service) ProcessOne(ctx context.Context) (bool, error) {
 	}
 	if action == "remove" && eligible {
 		return true, finishJob(ctx, tx, jobID, "done", "another entitlement grants access")
+	}
+	if action == "decline" && eligible {
+		return true, finishJob(ctx, tx, jobID, "done", "membership became eligible")
 	}
 	member, err := s.Telegram.GetChatMember(ctx, chatID, userID)
 	if err != nil {
@@ -118,7 +124,7 @@ func (s Service) ProcessOne(ctx context.Context) (bool, error) {
 		if _, err := tx.Exec(ctx, `UPDATE join_requests SET status='approved' WHERE community_id=$1 AND telegram_user_id=$2`, communityID, userID); err != nil {
 			return false, err
 		}
-		return true, finishJob(ctx, tx, jobID, "done", "")
+		return true, finishJob(ctx, tx, jobID, "awaiting_confirmation", "waiting for Telegram membership confirmation")
 	case "remove":
 		if member.Status == "left" || member.Status == "kicked" {
 			return true, finishJob(ctx, tx, jobID, "done", "")
@@ -130,6 +136,34 @@ func (s Service) ProcessOne(ctx context.Context) (bool, error) {
 		if err != nil || !ok {
 			return true, retryJob(ctx, tx, jobID, attempts, "Telegram removal failed")
 		}
+		if err := notify.Queue(ctx, tx, s.BotID, userID, "access-removed:"+jobID,
+			"Your community access has been removed after your paid entitlement ended. Open MemberOS to subscribe again or contact support."); err != nil {
+			return false, err
+		}
+		return true, finishJob(ctx, tx, jobID, "done", "")
+	case "decline":
+		if member.Status == "member" || member.Status == "restricted" {
+			return true, finishJob(ctx, tx, jobID, "done", "already a member")
+		}
+		var pending bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM join_requests WHERE community_id=$1
+            AND telegram_user_id=$2 AND status='pending')`, communityID, userID).Scan(&pending); err != nil {
+			return false, err
+		}
+		if !pending {
+			return true, finishJob(ctx, tx, jobID, "done", "no pending join request")
+		}
+		var ok bool
+		err = s.Telegram.Call(ctx, "declineChatJoinRequest", url.Values{
+			"chat_id": {strconv.FormatInt(chatID, 10)}, "user_id": {strconv.FormatInt(userID, 10)},
+		}, &ok)
+		if err != nil || !ok {
+			return true, retryJob(ctx, tx, jobID, attempts, "Telegram decline failed")
+		}
+		if _, err := tx.Exec(ctx, `UPDATE join_requests SET status='ineligible' WHERE community_id=$1
+            AND telegram_user_id=$2 AND status='pending'`, communityID, userID); err != nil {
+			return false, err
+		}
 		return true, finishJob(ctx, tx, jobID, "done", "")
 	default:
 		return true, finishJob(ctx, tx, jobID, "failed", "unknown access action")
@@ -137,7 +171,9 @@ func (s Service) ProcessOne(ctx context.Context) (bool, error) {
 }
 
 func finishJob(ctx context.Context, tx pgx.Tx, id, state, reason string) error {
-	_, err := tx.Exec(ctx, `UPDATE access_jobs SET status=$2,last_error=NULLIF($3,''),finished_at=now() WHERE id=$1`, id, state, reason)
+	_, err := tx.Exec(ctx, `UPDATE access_jobs SET status=$2,last_error=NULLIF($3,''),
+	        finished_at=CASE WHEN $2='awaiting_confirmation' THEN NULL ELSE now() END,
+        run_after=CASE WHEN $2='awaiting_confirmation' THEN now() ELSE run_after END WHERE id=$1`, id, state, reason)
 	if err != nil {
 		return err
 	}

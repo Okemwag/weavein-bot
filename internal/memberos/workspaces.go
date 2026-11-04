@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (a *app) workspaces(w http.ResponseWriter, r *http.Request) {
@@ -14,7 +15,8 @@ func (a *app) workspaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		rows, err := a.db.Query(r.Context(), `SELECT w.id,w.name,c.display_name,c.support_contact,wm.role
+		rows, err := a.db.Query(r.Context(), `SELECT w.id,w.name,c.display_name,c.support_contact,wm.role,
+			w.timezone,w.language,w.notifications_enabled,w.deletion_requested_at
 			FROM workspaces w JOIN creators c ON c.id=w.creator_id JOIN workspace_members wm ON wm.workspace_id=w.id
 			WHERE wm.telegram_user_id=$1 ORDER BY w.created_at`, userID)
 		if err != nil {
@@ -24,13 +26,17 @@ func (a *app) workspaces(w http.ResponseWriter, r *http.Request) {
 		defer rows.Close()
 		result := make([]map[string]any, 0)
 		for rows.Next() {
-			var id, name, seller, support, role string
-			if err := rows.Scan(&id, &name, &seller, &support, &role); err != nil {
+			var id, name, seller, support, role, timezone, language string
+			var notificationsEnabled bool
+			var deletionRequestedAt *time.Time
+			if err := rows.Scan(&id, &name, &seller, &support, &role, &timezone, &language, &notificationsEnabled, &deletionRequestedAt); err != nil {
 				http.Error(w, "database error", 500)
 				return
 			}
 			managedAllowed := a.cfg.managedEnabled && a.cfg.botRecipientAck == strconv.FormatInt(a.cfg.botID, 10) && a.cfg.managedWorkspaceID == id
-			result = append(result, map[string]any{"id": id, "name": name, "seller": seller, "support_contact": support, "role": role, "managed_billing_enabled": managedAllowed})
+			result = append(result, map[string]any{"id": id, "name": name, "seller": seller, "support_contact": support,
+				"role": role, "timezone": timezone, "language": language, "notifications_enabled": notificationsEnabled,
+				"deletion_requested_at": deletionRequestedAt, "managed_billing_enabled": managedAllowed})
 		}
 		if rows.Err() != nil {
 			http.Error(w, "database error", 500)

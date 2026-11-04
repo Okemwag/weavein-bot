@@ -14,7 +14,7 @@ CREATE TABLE subscription_events (
 );
 CREATE INDEX subscription_events_history_idx ON subscription_events(subscription_id,occurred_at DESC);
 CREATE FUNCTION reject_subscription_event_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN RAISE EXCEPTION 'subscription events are immutable'; END $$;
+BEGIN RAISE EXCEPTION 'subscription events are immutable'; END; $$;
 CREATE TRIGGER subscription_events_immutable BEFORE UPDATE OR DELETE ON subscription_events
     FOR EACH ROW EXECUTE FUNCTION reject_subscription_event_mutation();
 

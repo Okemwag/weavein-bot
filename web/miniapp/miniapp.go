@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-//go:embed index.html app.css app.js shared.js subscriber.js creator.js
+//go:embed index.html app.css app.js shared.js subscriber.js subscriber_home.js creator.js creator_members.js creator_support.js operations.js operations_inspection.js
 var assets embed.FS
 
 func Handler() http.Handler {

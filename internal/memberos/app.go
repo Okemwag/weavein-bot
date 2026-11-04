@@ -43,6 +43,10 @@ func Run() error {
 	go a.processUpdates(ctx)
 	go a.accessService().RunJobs(ctx)
 	go a.accessService().RunExpirations(ctx)
+	go a.accessService().RunReconciliation(ctx)
+	go a.sendNotifications(ctx)
+	go a.runReminderSchedule(ctx)
+	go a.runOperationsAlerts(ctx)
 	server := &http.Server{Addr: cfg.address, Handler: a.routes(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()

@@ -42,6 +42,7 @@ func (a *app) checkout(w http.ResponseWriter, r *http.Request) {
 	var communityID, creatorID, title, planVersionID, planName string
 	var price int
 	err = a.db.QueryRow(r.Context(), `SELECT c.id,c.creator_id,c.title,v.id,p.name,v.price_stars FROM communities c
+		JOIN saas_accounts sa ON sa.workspace_id=c.workspace_id AND sa.status='active' AND sa.managed_billing_allowed
 		JOIN plans p ON p.community_id=c.id AND p.workspace_id=c.workspace_id AND p.status='active'
 		JOIN LATERAL (SELECT * FROM plan_versions WHERE plan_id=p.id ORDER BY version DESC LIMIT 1) v ON true
 		WHERE c.id::text=$1 AND c.status='published' AND c.billing_mode='managed_bot' AND c.billing_bot_id=$2
@@ -66,6 +67,19 @@ func (a *app) checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
+	// A disconnect takes an exclusive lock on this row. Recheck publication
+	// under a shared lock so checkout cannot race the final disconnect check.
+	var checkoutAllowed bool
+	if err := tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM communities c JOIN saas_accounts sa ON sa.workspace_id=c.workspace_id
+		WHERE c.id=$1 AND c.status='published' AND c.billing_mode='managed_bot'
+		AND c.billing_bot_id=$2 AND sa.status='active' AND sa.managed_billing_allowed FOR SHARE OF c,sa)`, communityID, a.cfg.botID).Scan(&checkoutAllowed); err != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	if !checkoutAllowed {
+		http.Error(w, "community is no longer accepting checkout", http.StatusConflict)
+		return
+	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO members(creator_id,telegram_user_id,first_name,username)
         VALUES($1,$2,coalesce((SELECT first_name FROM telegram_profiles WHERE telegram_user_id=$2),''),
         coalesce((SELECT username FROM telegram_profiles WHERE telegram_user_id=$2),''))

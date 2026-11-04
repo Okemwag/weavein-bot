@@ -1,0 +1,1 @@
+ALTER TABLE star_reconciliation_runs ADD COLUMN operator_telegram_user_id bigint;

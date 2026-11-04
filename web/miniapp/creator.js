@@ -1,4 +1,8 @@
 import { tg, state, byId, node, notice, api, date, displayStatus } from './shared.js';
+import { renderMemberDirectory, downloadCSV } from './creator_members.js';
+import { renderCreatorSupport } from './creator_support.js';
+
+let reportPeriod = new URLSearchParams();
 
 async function loadStudio() {
   if (!state.token) return;
@@ -67,6 +71,17 @@ async function renderStudioSetup() {
   for (const step of progress.steps) steps.append(node('li', step.complete ? 'done' : '', `${step.complete ? '✓' : '○'} ${step.label}`));
   checklist.append(steps);
   setup.append(checklist);
+  try {
+    const account = await api(`/api/v1/creator/workspaces/${encodeURIComponent(active.id)}/saas`);
+    const billing = node('div', 'detail-card');
+    billing.append(node('h2', '', 'MemberOS plan'),
+      node('p', '', `${account.plan === 'pilot' ? 'Pilot allowance' : 'Free allowance'} · ${account.status}`),
+      node('p', '', `${account.communities_used} of ${account.community_limit} connected communities`),
+      node('p', 'muted', account.billing));
+    if (account.status !== 'active') billing.append(node('p', 'muted', 'New community connections are paused. Existing subscriber records and access remain available.'));
+    setup.append(billing);
+    state.saasAccount = account;
+  } catch (error) { setup.append(node('p', 'muted', `MemberOS plan unavailable: ${error.message}`)); }
   if (active.role !== 'owner') return;
   const profile = node('details', 'detail-card setup-details');
   profile.append(node('summary', '', 'Creator profile and support contact'));
@@ -81,6 +96,42 @@ async function renderStudioSetup() {
     } catch (error) { notice(error.message, true); }
   });
   profile.append(profileForm); setup.append(profile);
+  const settings = node('details', 'detail-card setup-details');
+  settings.append(node('summary', '', 'Account settings'));
+  const settingsForm = node('form', 'setup-form');
+  const timezone = formField('Timezone (IANA name)', 'timezone', 'text', true, active.timezone || 'UTC');
+  const language = node('select', 'select'); language.name = 'language';
+  for (const [code, label] of [['en', 'English'], ['sw', 'Kiswahili']]) {
+    const option = node('option', '', label); option.value = code; option.selected = active.language === code; language.append(option);
+  }
+  const languageField = node('label', 'form-field'); languageField.append(node('span', '', 'Language preference'), language);
+  const alerts = node('input'); alerts.type = 'checkbox'; alerts.name = 'notifications_enabled';
+  alerts.checked = active.notifications_enabled;
+  const alertsField = node('label', 'row'); alertsField.append(node('span', '', 'Operational notifications'), alerts);
+  const saveSettings = node('button', 'button full', 'Save settings'); saveSettings.type = 'submit';
+  settingsForm.append(timezone, languageField, alertsField, saveSettings);
+  settingsForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await api('/api/v1/creator/workspaces/' + encodeURIComponent(active.id) + '/settings', {
+        method: 'PATCH', body: JSON.stringify({
+          timezone: new FormData(settingsForm).get('timezone'),
+          language: language.value, notifications_enabled: alerts.checked,
+        }),
+      });
+      notice('Settings saved.'); await loadStudio();
+    } catch (error) { notice(error.message, true); }
+  });
+  const deleteRequest = node('button', 'button danger', active.deletion_requested_at ? 'Deletion review requested' : 'Request account deletion');
+  deleteRequest.type = 'button'; deleteRequest.disabled = !!active.deletion_requested_at;
+  deleteRequest.addEventListener('click', async () => {
+    if (!window.confirm('Request a review of this workspace for deletion? Existing billing records will be preserved during review.')) return;
+    try {
+      await api('/api/v1/creator/workspaces/' + encodeURIComponent(active.id) + '/deletion-request', { method: 'POST' });
+      notice('Deletion review requested.'); await loadStudio();
+    } catch (error) { notice(error.message, true); }
+  });
+  settings.append(settingsForm, deleteRequest); setup.append(settings);
   const connection = node('details', 'detail-card setup-details');
   connection.open = progress.connected_communities === 0;
   connection.append(node('summary', '', 'Connect another private community'));
@@ -89,7 +140,7 @@ async function renderStudioSetup() {
   const mode = node('select', 'select'); mode.name = 'billing_mode';
   const nativeOption = node('option', '', 'Native paid channel'); nativeOption.value = 'native_channel'; mode.append(nativeOption);
   const managedOption = node('option', '', 'Bot-managed Stars subscription'); managedOption.value = 'managed_bot'; mode.append(managedOption);
-  managedOption.disabled = !active.managed_billing_enabled;
+  managedOption.disabled = !active.managed_billing_enabled || !state.saasAccount?.managed_billing_allowed;
   const modeLabel = node('label', 'form-field'); modeLabel.append(node('span', '', 'Billing mode'), mode);
   form.append(formField('Telegram chat ID', 'telegram_chat_id'), formField('Community title', 'title'),
     formField('Description', 'description', 'textarea', false), formField('Price in Stars / 30 days', 'price_stars', 'number'), modeLabel,
@@ -108,6 +159,10 @@ async function renderStudioSetup() {
     } catch (error) { notice(error.message, true); }
   });
   connection.append(form); setup.append(connection);
+  if (state.saasAccount && (state.saasAccount.status !== 'active' || state.saasAccount.communities_used >= state.saasAccount.community_limit)) {
+    form.querySelector('button')?.setAttribute('disabled', '');
+    connection.append(node('p', 'muted', 'The workspace allowance does not currently permit another community. Contact MemberOS support for a pilot review.'));
+  }
 }
 
 function renderPlanManager(content, communityID, data) {
@@ -190,10 +245,11 @@ async function renderStudio(id) {
   const content = byId('studio-content');
   content.replaceChildren(node('p', 'muted', 'Loading your community…'));
   try {
-    const [overview, members, planData] = await Promise.all([
-      api(`/api/v1/creator/communities/${encodeURIComponent(id)}/overview`),
+    const [overview, members, planData, guidance] = await Promise.all([
+      api('/api/v1/creator/communities/' + encodeURIComponent(id) + '/overview?' + reportPeriod.toString()),
       api(`/api/v1/creator/communities/${encodeURIComponent(id)}/members`),
       api(`/api/v1/creator/communities/${encodeURIComponent(id)}/plans`),
+      api(`/api/v1/creator/communities/${encodeURIComponent(id)}/onboarding`),
     ]);
     content.replaceChildren();
     const selector = node('select', 'select');
@@ -207,6 +263,25 @@ async function renderStudio(id) {
     selector.addEventListener('change', () => renderStudio(selector.value));
     content.append(selector);
     const chosen = state.creatorCommunities.find((item) => item.id === id);
+    const guideEditor = node('details', 'detail-card setup-details');
+    guideEditor.append(node('summary', '', 'Community category, rules and onboarding'));
+    const guideForm = node('form', 'setup-form');
+    guideForm.append(formField('Category', 'category', 'text', false, guidance.category),
+      formField('Community rules', 'rules', 'textarea', false, guidance.rules),
+      formField('Where members should begin', 'content_guide', 'textarea', false, guidance.content_guide),
+      node('button', 'button full', 'Save community guidance'));
+    guideForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await api(`/api/v1/creator/communities/${encodeURIComponent(id)}/onboarding`,
+          { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(guideForm))) });
+        notice('Community guidance saved.'); await renderStudio(id);
+      } catch (error) { notice(error.message, true); }
+    });
+    guideEditor.append(guideForm); content.append(guideEditor);
+    if (chosen?.mode === 'managed_bot') {
+      content.append(node('p', 'muted', `Bot connection: ${chosen.connection_status || 'unknown'}${chosen.last_permission_error ? ` · ${chosen.last_permission_error}` : ''}`));
+    }
     if (chosen?.status === 'published') {
       const enrollment = new URL(`/app/?community=${encodeURIComponent(id)}`, window.location.origin).href;
       const link = node('div', 'detail-card');
@@ -226,14 +301,46 @@ async function renderStudio(id) {
       });
       content.append(node('p', 'muted', 'This community is saved as a draft. Subscriber sales are not active.'), repair);
     }
+    if (chosen?.mode === 'managed_bot') {
+      const range = node('form', 'report-filters');
+      const from = node('input', 'select'); from.type = 'date'; from.value = reportPeriod.get('from') || '';
+      from.setAttribute('aria-label', 'Report start date');
+      const to = node('input', 'select'); to.type = 'date'; to.value = reportPeriod.get('to') || '';
+      to.setAttribute('aria-label', 'Report end date, exclusive');
+      const apply = node('button', 'button secondary', 'Apply dates'); apply.type = 'submit';
+      const exportPayments = node('button', 'button ghost', 'Export payments'); exportPayments.type = 'button';
+      range.append(from, to, apply, exportPayments);
+      range.addEventListener('submit', (event) => {
+        event.preventDefault();
+        reportPeriod = new URLSearchParams();
+        if (from.value) reportPeriod.set('from', from.value);
+        if (to.value) reportPeriod.set('to', to.value);
+        renderStudio(id);
+      });
+      exportPayments.addEventListener('click', async () => {
+        try {
+          await downloadCSV('/api/v1/creator/communities/' + encodeURIComponent(id)
+            + '/payments.csv?' + reportPeriod.toString(), 'memberos-payments.csv');
+        } catch (error) { notice(error.message, true); }
+      });
+      content.append(node('p', 'muted', 'Report end date is exclusive. Current active subscribers are shown as of now.'), range);
+    }
     const metrics = node('div', 'metric-grid');
     const values = [
       ['Observed members', overview.observed_members, 'Known to MemberOS'],
       ['Known expiry', overview.known_expiry_count, 'Telegram observations'],
     ];
     if (overview.billing_metrics !== 'unavailable') {
-      values.push(['Paid subscriptions', overview.billing_metrics.active_paid_subscriptions, 'Recorded bot payments']);
-      values.push(['Net Stars recorded', overview.billing_metrics.recorded_gross_stars - overview.billing_metrics.recorded_refunded_stars, 'Gross less recorded refunds']);
+      const billing = overview.billing_metrics;
+      values.push(['Active paid subscribers', billing.active_paid_subscriptions, 'Distinct members now']);
+      values.push(['New subscribers', billing.new_subscribers, 'Selected period']);
+      values.push(['Cancellations', billing.cancellations, 'Selected period']);
+      values.push(['Expired', billing.expired_subscriptions, 'Selected period']);
+      values.push(['Net Stars recorded', billing.recorded_gross_stars - billing.recorded_refunded_stars, 'Selected period; recorded payments']);
+      values.push(['Awaiting access', billing.subscribers_awaiting_access, 'Known paid members']);
+      values.push(['Failed access jobs', billing.failed_access_jobs, 'Need operator attention']);
+      const outcomes = billing.observed_renewal_successes + billing.observed_renewal_failures;
+      if (outcomes) values.push(['Observed renewal success', Math.round(100 * billing.observed_renewal_successes / outcomes) + '%', 'Only observed outcomes']);
     }
     for (const [label, value, caption] of values) {
       const metric = node('div', 'metric');
@@ -241,23 +348,59 @@ async function renderStudio(id) {
       metrics.append(metric);
     }
     content.append(metrics);
-    renderPlanManager(content, id, planData);
-    content.append(node('div', 'divider'), node('div', 'section-heading'));
-    content.lastChild.append(node('h2', '', 'Members'), node('span', 'muted', 'Latest 50 known members'));
-    const list = node('div', 'member-list');
-    if (!members.members?.length) list.append(node('div', 'empty', 'No members have been observed yet.'));
-    for (const member of members.members || []) {
-      const item = node('div', 'member-row');
-      const name = node('div');
-      name.append(node('strong', '', member.first_name || `Telegram user ${member.telegram_user_id}`),
-        node('small', '', member.billing_status ? `${displayStatus(member.billing_status)} · ${displayStatus(member.access_status)}` : displayStatus(member.access_status)));
-      item.append(name, node('span', 'muted', member.paid_through ? date(member.paid_through) : ''));
-      list.append(item);
+    if (overview.billing_metrics !== 'unavailable' && overview.billing_metrics.paid_by_plan?.length) {
+      const byPlan = node('div', 'detail-card');
+      byPlan.append(node('h2', '', 'Active subscribers by plan'));
+      for (const item of overview.billing_metrics.paid_by_plan) {
+        const row = node('div', 'row');
+        row.append(node('span', '', item.plan), node('strong', '', item.subscribers));
+        byPlan.append(row);
+      }
+      content.append(byPlan);
     }
-    content.append(list);
+    renderPlanManager(content, id, planData);
+    renderMemberDirectory(content, id, members, planData);
     if (overview.billing_metrics === 'unavailable') content.append(node('p', 'muted', 'Native channel payment and revenue figures are unavailable through this bot.'));
-    else content.append(node('p', 'muted', 'Stars figures use payment events recorded by MemberOS. They have not been reconciled with the bot balance.'));
+    else {
+      content.append(node('p', 'muted', 'Stars figures use verified payment updates. Bot balance and transaction observations are reviewed separately.'));
+      await renderOperations(content, id);
+    }
+    await renderCreatorSupport(content, id, () => renderStudio(id));
   } catch (error) { content.replaceChildren(node('div', 'empty', error.message)); }
+}
+
+async function renderOperations(content, id) {
+  const root = `/api/v1/creator/communities/${encodeURIComponent(id)}`;
+  try {
+    const [mismatches, payments] = await Promise.all([
+      api(`${root}/access-mismatches`), api(`${root}/payments`),
+    ]);
+    const heading = (title, subtitle) => {
+      const section = node('div', 'section-heading');
+      section.append(node('h2', '', title), node('span', 'muted', subtitle));
+      content.append(node('div', 'divider'), section);
+    };
+    heading('Access issues', 'Known members only');
+    const issues = node('div', 'member-list');
+    if (!mismatches.mismatches.length) issues.append(node('div', 'empty', 'No known access mismatches.'));
+    for (const item of mismatches.mismatches.slice(0, 20)) {
+      const row = node('div', 'member-row');
+      row.append(node('strong', '', `Telegram user ${item.telegram_user_id}`),
+        node('small', '', item.failed_job ? 'Access action failed' : item.observation_stale ? 'Access check is stale' : item.entitled ? 'Paid, access missing' : 'Access without entitlement'));
+      issues.append(row);
+    }
+    content.append(issues);
+    heading('Verified payments', 'Latest 100');
+    const ledger = node('div', 'member-list');
+    if (!payments.payments.length) ledger.append(node('div', 'empty', 'No verified bot payments yet.'));
+    for (const payment of payments.payments.slice(0, 20)) {
+      const row = node('div', 'member-row');
+      row.append(node('strong', '', `${payment.amount_stars} Stars · Telegram user ${payment.telegram_user_id}`),
+        node('small', '', `${date(payment.paid_at)} · ${payment.star_reconciliation.replaceAll('_', ' ')}${payment.refunded_at ? ' · Refunded' : ''}`));
+      ledger.append(row);
+    }
+    content.append(ledger);
+  } catch (error) { content.append(node('p', 'muted', `Operations unavailable: ${error.message}`)); }
 }
 
 

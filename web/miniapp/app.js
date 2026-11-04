@@ -1,6 +1,7 @@
 import { tg, state, byId, uuid, notice, api, show } from './shared.js';
 import { renderDiscovery, selectCommunity, refreshMembership, renderMembership } from './subscriber.js';
 import { loadStudio } from './creator.js';
+import { loadOperations } from './operations.js';
 
 async function start() {
   tg?.ready?.();
@@ -8,6 +9,7 @@ async function start() {
   byId('tab-discover').addEventListener('click', () => show('discover'));
   byId('tab-membership').addEventListener('click', () => { show('membership'); renderMembership(); });
   byId('tab-studio').addEventListener('click', () => show('studio'));
+  byId('tab-operations').addEventListener('click', () => { show('operations'); loadOperations(); });
   byId('back-to-discover').addEventListener('click', () => show('discover'));
   window.addEventListener('focus', () => { if (state.view === 'membership') refreshMembership(); });
 
@@ -15,6 +17,7 @@ async function start() {
     try {
       const session = await api('/api/v1/telegram/session', { method: 'POST', body: JSON.stringify({ init_data: tg.initData }) });
       state.token = session.token;
+      byId('tab-operations').hidden = !session.is_operator;
       byId('connection').textContent = 'Connected to Telegram';
       loadStudio();
     } catch (error) { byId('connection').textContent = 'Session unavailable'; notice(error.message, true); }

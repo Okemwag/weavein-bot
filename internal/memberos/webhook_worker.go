@@ -61,6 +61,8 @@ func (a *app) processOne(ctx context.Context) (bool, error) {
 		processingErr = a.processChatMember(ctx, work, updateID, raw)
 	case "message":
 		processingErr = billing.ProcessMessage(ctx, work, botID, updateID, raw)
+	case "command":
+		processingErr = a.processCommand(ctx, work, botID, updateID, raw)
 	case "subscription":
 		processingErr = billing.ProcessSubscription(ctx, work, botID, updateID, raw)
 	case "chat_join_request":

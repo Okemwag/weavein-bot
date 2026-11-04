@@ -68,7 +68,9 @@ func (a *app) membership(w http.ResponseWriter, r *http.Request) {
 		var eligible bool
 		var joinLink *string
 		if err := a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM entitlements WHERE community_id::text=$1
-            AND telegram_user_id=$2 AND status='active' AND valid_until>now()),
+	            AND telegram_user_id=$2 AND status='active' AND valid_until>now())
+            OR EXISTS(SELECT 1 FROM access_overrides WHERE community_id::text=$1
+            AND telegram_user_id=$2 AND active=true AND valid_until>now()),
             (SELECT managed_join_link FROM communities WHERE id::text=$1)`, communityID, userID).Scan(&eligible, &joinLink); err != nil {
 			http.Error(w, "database error", 500)
 			return

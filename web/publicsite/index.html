@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101d2b">
+  <meta name="description" content="MemberOS helps Telegram creators manage paid memberships, access, support and revenue operations.">
+  <title>MemberOS — Your paid community, under control</title>
+  <link rel="stylesheet" href="/site.css">
+  <script type="module" src="/site.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="MemberOS home"><span class="brand-symbol">M</span> MemberOS</a>
+    <nav aria-label="Main navigation"><a href="#how-it-works">How it works</a><a href="#walkthrough">Walkthrough</a><a href="#pricing">Pricing</a><a href="#contact">Contact</a></nav>
+    {{if .BotURL}}<a class="header-action" href="{{.BotURL}}">Open in Telegram <span aria-hidden="true">↗</span></a>{{else}}<a class="header-action" href="/app/">Explore the app <span aria-hidden="true">↗</span></a>{{end}}
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="pulse"></span> Built for paid Telegram communities</p>
+        <h1 id="hero-title">Create the community.<br><em>We'll handle the membership.</em></h1>
+        <p class="hero-intro">MemberOS connects subscriptions, member access, support and operating reports. Your subscribers join and manage their membership inside Telegram.</p>
+        <div class="hero-actions">
+          {{if .BotURL}}<a class="button primary" href="{{.BotURL}}">Start in Telegram <span aria-hidden="true">↗</span></a>{{else}}<a class="button primary" href="/app/">Explore MemberOS <span aria-hidden="true">↗</span></a>{{end}}
+          <a class="button secondary" href="#walkthrough">See how it works</a>
+        </div>
+        <p class="hero-note">Telegram Stars checkout for supported digital subscriptions · Clear access status · Verified transaction records</p>
+      </div>
+      <div class="hero-preview" aria-label="Illustrative MemberOS creator dashboard">
+        <div class="preview-top"><span><span class="mini-brand">M</span> MemberOS / Studio</span><span class="preview-live">● Community overview</span></div>
+        <div class="preview-heading"><div><small>CREATOR WORKSPACE</small><h2>Your community, clearly.</h2></div><span class="period">Last 30 days</span></div>
+        <div class="preview-grid"><div><small>Paid subscribers</small><strong>248</strong><span>Verified entitlements</span></div><div><small>Recorded Stars</small><strong>12.4k</strong><span>Bot payment events</span></div><div><small>Access issues</small><strong>2</strong><span>Needs review</span></div></div>
+        <div class="chart"><div class="chart-head"><strong>Membership activity</strong><span>Illustrative data</span></div><div class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        <p class="preview-disclaimer">Illustrative screen. Actual metrics depend on verified records and Telegram access observations.</p>
+      </div>
+    </section>
+    <section class="trust-line" aria-label="Product areas"><span>SUBSCRIPTIONS</span><span>ACCESS CONTROL</span><span>MEMBER SUPPORT</span><span>OPERATIONS</span></section>
+    <section id="how-it-works" class="section-wrap">
+      <div class="section-intro"><p class="eyebrow">ONE SYSTEM, THE WHOLE JOURNEY</p><h2>From first payment<br>to every renewal.</h2><p>MemberOS keeps the financial record, membership entitlement and actual Telegram access separate, so each problem has a clear place to resolve it.</p></div>
+      <div class="feature-grid"><article><span class="feature-num">01</span><h3>Publish an offer</h3><p>Connect a community, verify bot permissions and set a versioned 30-day Stars membership plan.</p></article><article><span class="feature-num">02</span><h3>Let members subscribe</h3><p>Subscribers review terms and pay through Telegram. Access starts after a confirmed payment event.</p></article><article><span class="feature-num">03</span><h3>Keep access accurate</h3><p>Join requests, expiry, reconciliation and permission alerts give your team a recoverable access workflow.</p></article><article><span class="feature-num">04</span><h3>Run the business</h3><p>Review members, observed revenue, support requests and exceptions from one creator workspace.</p></article></div>
+    </section>
+    <section id="walkthrough" class="walkthrough section-wrap">
+      <div class="walkthrough-copy"><p class="eyebrow">INTERACTIVE WALKTHROUGH</p><h2>See the subscriber journey.</h2><p id="demo-explanation">A subscriber finds your community and reviews the offer before paying.</p><div class="step-controls"><button type="button" data-step="0" aria-pressed="true">1 Discover</button><button type="button" data-step="1">2 Subscribe</button><button type="button" data-step="2">3 Access</button><button type="button" data-step="3">4 Manage</button></div><a class="text-link" href="/app/">Open the live app preview ↗</a></div>
+      <div class="phone" aria-live="polite"><div class="phone-bar"><span>●●●</span><span>Telegram Mini App</span><span>⋯</span></div><div class="phone-body"><p class="phone-kicker" id="demo-kicker">DISCOVER</p><h3 id="demo-title">Find your next community.</h3><p id="demo-body">Browse independent communities and compare the current membership offer.</p><div class="phone-card"><span id="demo-card-label">COMMUNITY</span><strong id="demo-card-value">Capital Research Club</strong><small id="demo-card-caption">Premium research and private discussion</small></div><div class="phone-button" id="demo-action">Explore community</div></div></div>
+    </section>
+    <section id="pricing" class="pricing section-wrap"><div><p class="eyebrow">EARLY ACCESS</p><h2>Pricing that fits your launch.</h2><p>MemberOS is in development. Public SaaS plans and prices have not been finalized. Tell us about your community and we’ll discuss pilot access and the applicable terms before you commit.</p></div><a class="button primary" href="#contact">Ask about early access ↗</a></section>
+    <section id="contact" class="contact section-wrap"><div><p class="eyebrow">TALK TO US</p><h2>Tell us what you’re building.</h2><p>Use this form for creator onboarding, product questions or pilot interest. For a subscriber payment or access issue, open the relevant community in the Mini App and use its support form.</p></div><form id="creator-contact"><label>Name<input name="name" autocomplete="name" required minlength="2" maxlength="120"></label><label>Email<input name="email" type="email" autocomplete="email" required maxlength="254"></label><label>Community link <span>(optional)</span><input name="community_link" type="url" placeholder="https://t.me/..."></label><label>What can we help with?<textarea name="message" required minlength="10" maxlength="2000" rows="5"></textarea></label><label class="honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label><button class="button primary" type="submit">Send inquiry ↗</button><p id="contact-status" role="status"></p></form></section>
+  </main>
+  <footer><div class="brand"><span class="brand-symbol">M</span> MemberOS</div><p>Membership operations for Telegram communities.</p><div><a href="/app/">Mini App preview</a>{{if .BotURL}}<a href="{{.BotURL}}">Telegram bot</a>{{end}}<a href="#contact">Creator support</a></div><small>© 2026 MemberOS. Product preview; paid launch terms will be published before checkout.</small></footer>
+</body>
+</html>

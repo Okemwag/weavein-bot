@@ -49,9 +49,15 @@ func (a *app) webhook(w http.ResponseWriter, r *http.Request) {
 		var message struct {
 			Successful json.RawMessage `json:"successful_payment"`
 			Refunded   json.RawMessage `json:"refunded_payment"`
+			Text       string          `json:"text"`
 		}
-		if json.Unmarshal(update.Message, &message) == nil && (len(message.Successful) > 0 || len(message.Refunded) > 0) {
-			kind = "message"
+		if json.Unmarshal(update.Message, &message) == nil {
+			if len(message.Successful) > 0 || len(message.Refunded) > 0 {
+				kind = "message"
+			}
+			if message.Text == "/help" || message.Text == "/support" || message.Text == "/terms" || message.Text == "/paysupport" || message.Text == "/start" {
+				kind = "command"
+			}
 		}
 	}
 	if kind == "unsupported" {

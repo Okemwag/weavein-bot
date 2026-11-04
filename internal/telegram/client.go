@@ -82,7 +82,7 @@ func (t Client) Call(ctx context.Context, method string, params url.Values, outp
 		OK     bool            `json:"ok"`
 		Result json.RawMessage `json:"result"`
 	}
-	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&envelope) != nil || !envelope.OK {
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&envelope) != nil || !envelope.OK {
 		return fmt.Errorf("telegram %s returned status %d", method, resp.StatusCode)
 	}
 	if err := json.Unmarshal(envelope.Result, output); err != nil {

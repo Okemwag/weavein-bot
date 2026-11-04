@@ -9,18 +9,18 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - P0 is the commercial release gate. P1 and P2 are tracked below as open backlog. An unchecked feature is a requirement, not a claim of implementation.
 - Native paid-channel membership and bot-managed billing are separate modes. Native channel billing history is unavailable to this bot and must not be represented as recorded revenue. The managed mode has one configured receiving bot per service deployment; creator ownership of that bot is an operator attestation, not automated verification.
 
-**Release assessment: not ready for real paying creators.** Go build, vet, Go lint and JavaScript syntax checks pass for the current changes. Tests were skipped at the user's request; the new connection and onboarding paths have not passed PostgreSQL or live Telegram validation. An isolated PostgreSQL lifecycle test and headless browser preview passed in an earlier run; no Telegram test-environment payment, live webhook, real creator pilot, backup restore, or production support flow has been demonstrated.
+**Release assessment: not ready for real paying creators.** Go build, vet and lint and JavaScript syntax checks pass for current code. Tests remain skipped at the user request. New CRM, notification, override, and operations migrations and flows have not passed PostgreSQL or live Telegram validation. No Telegram test-environment payment, real creator pilot, backup restore or production support flow has been demonstrated.
 
 ## P0 — Public website, discovery and positioning
 
-- [ ] Professional public MemberOS website. Partial: the embedded Mini App has a public preview at `/app/`.
-- [ ] Homepage explaining the product and its benefits.
+- [x] Embedded responsive public MemberOS site at `/`, inspected in desktop and mobile headless Chrome.
+- [x] Homepage explains creator setup, subscriptions, access and operations.
 - [ ] Validated MemberOS SaaS pricing page.
-- [ ] Live demo or interactive walkthrough.
-- [ ] Creator signup and login entry points. Partial: Telegram Mini App sessions exist, while creator provisioning uses a CLI.
+- [x] Interactive subscriber journey walkthrough with a direct Mini App preview link.
+- [x] Configurable Telegram bot entry link opens the Mini App creator registration flow; live BotFather configuration remains open.
 - [ ] Published Terms of Service, Privacy Policy, and Support pages.
-- [ ] Creator contact form.
-- [ ] Public links to a configured Telegram bot and Mini App.
+- [x] Public creator contact form stores rate-limited inquiries; protected Ops lists and resolves them with an audit entry.
+- [x] Site links to the Mini App and to the configured bot when `TELEGRAM_BOT_USERNAME` is set. Production configuration remains open.
 
 ## P0 — Creator accounts, onboarding and workspaces
 
@@ -31,8 +31,8 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [ ] Multiple communities within one workspace, subject to a SaaS plan. Partial: Studio and CLI can attach several verified chats; SaaS limits are absent.
 - [x] Persisted onboarding progress derived from saved workspaces, communities and active plans; Studio resumes from current server state.
 - [x] Onboarding checklist showing missing workspace, profile, connection, publication and offer steps.
-- [ ] Account settings for profile, language, notifications, and timezone.
-- [ ] Creator deactivation and deletion-request flow.
+- [ ] Complete account settings. Partial: profile, timezone, notification toggle and language preference are saved in Studio; interface localization and operational preference enforcement remain.
+- [x] Owner can request workspace deletion for support review while billing records remain intact.
 
 ## P0 — Telegram integration and community connections
 
@@ -44,8 +44,8 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [x] Check `can_invite_users` and, for managed mode, `can_restrict_members` before publishing.
 - [x] Return a clear provisioning error for missing permissions.
 - [x] Creator-facing recheck of owner/bot permissions and publication of a saved draft after webhook recovery. Live Telegram recovery remains unverified.
-- [ ] Detect bot removal or demotion after setup.
-- [ ] Connection health states: healthy, degraded, disconnected.
+- [x] Periodic managed-community bot permission check records a degraded connection when required rights are missing. Live permission-loss recovery remains unverified.
+- [x] Record unknown, healthy, degraded, and disconnected connection states; periodic checks classify a removed bot as disconnected.
 - [x] Block attachment of a chat the signed-in creator does not own during provisioning.
 - [ ] Safe disconnect that stops automation and preserves billing history.
 
@@ -69,13 +69,13 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [x] Creator details and active plans, including benefits and current terms, appear in the Mini App.
 - [ ] Complete offer disclosure: price, interval, benefits, cancellation terms, and seller. Partial: these now appear from plan versions; published refund and legal policies are absent.
 - [x] Client flow for a managed Stars invoice and native paid-channel link (`web/miniapp/app.js`). Live Stars checkout remains unverified.
-- [ ] Distinct pending, successful, and failed payment outcomes. Partial: invoice-close polling and a generic error message exist; no persistent payment-result screen.
+- [x] Mini App shows pending, confirmed, failed and expired states from a server-backed checkout attempt; live Telegram checkout remains unverified.
 - [x] Show the native link or managed join link when applicable.
-- [ ] All active memberships and expiration dates in one home screen. Partial: one selected community can show its status and date.
+- [x] My Memberships lists known managed memberships with paid-through dates and observed native access.
 - [ ] Renewal and cancellation options for each mode. Partial: managed mode can turn off renewal; native mode only shows observed expiry.
 - [ ] In-app support, refund-policy, and terms links. Partial: support contact text is shown.
 - [ ] Verified mobile and light/dark Telegram layouts. Partial: one mobile light-theme preview was checked in headless Chrome; Telegram dark theme was not tested.
-- [ ] Interrupted-payment reopening flow. Partial: membership state is fetched on reopen, but there is no payment history or recovery screen.
+- [x] Reopening the Mini App reloads checkout and membership state and can reopen a pending invoice.
 
 ## P0 — Payments, billing and financial records
 
@@ -90,9 +90,9 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [x] Deduplicate updates and charges by bot/update and bot/charge IDs; the PostgreSQL lifecycle test covers duplicate charges.
 - [x] Store checkout, subscription, entitlement, and observed Telegram access separately.
 - [x] Store amounts as integer Stars with `XTR` validation.
-- [ ] Authorized refund issuance and policy workflow. Partial: incoming `refunded_payment` is recorded and entitlement is recalculated; no creator/admin refund request path exists.
-- [ ] Reconcile bot charges against `getStarTransactions` and investigate gaps.
-- [ ] Creator payment ledger and history screen. Partial: dashboard shows aggregate recorded gross/refunded Stars.
+- [ ] Authorized refund issuance and published policy. Partial: subscriber requests, protected admin approval, Telegram refund call, and refund-update confirmation are implemented; policy and live outcome handling remain unverified.
+- [ ] Complete historical Stars reconciliation. Partial: an admin run now pages through bot transactions, matches incoming charge IDs and exposes discrepancies; live verification and large-history operational behavior remain.
+- [x] Creator-scoped payment ledger and reconciliation status in Studio, backed by verified bot payment records.
 - [ ] Separate MemberOS SaaS revenue records from creator Stars revenue. MemberOS SaaS billing is absent.
 
 ## P0 — Subscription lifecycle
@@ -108,9 +108,9 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [ ] Prove timely revocation with Telegram test-environment and permission-loss cases. Local worker logic exists.
 - [ ] End-to-end reactivation after a fresh payment. Partial: renewed payment can unban, but the full rejoin flow has no live test.
 - [x] Recalculate entitlement when a matching refund event is recorded.
-- [ ] Complete immutable subscription event history. Partial: raw Telegram updates and selected audit events exist; there is no dedicated `subscription_events` ledger.
-- [ ] Authorized exception inspection and resolution interface.
-- [ ] Full delayed/out-of-order event handling. Partial: subscription update IDs prevent one regression path; refunds arriving before the charge are quarantined, without replay resolution.
+- [ ] Complete immutable subscription event history. Partial: an append-only `subscription_events` table records new transitions and migration 013 reconstructs historical payment/refund facts; unobserved historical failures and cancellations cannot be reconstructed safely.
+- [ ] Complete exception resolution interface. Partial: protected operations screen and admin APIs list and retry failed/quarantined webhook updates and access jobs; no permission-repair workflow yet.
+- [ ] Full delayed/out-of-order event handling. Partial: subscription update IDs prevent one regression path; refunds arriving before the charge are quarantined for operator-reviewed replay.
 
 ## P0 — Telegram access control
 
@@ -118,71 +118,71 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [x] Bind a managed join request to the Telegram numeric user ID.
 - [x] Recheck current entitlement before approving a managed join request.
 - [x] Queue eligible approval work.
-- [ ] Ineligible join-request explanation. Current code holds the request; it does not send guidance to the subscriber.
-- [ ] Confirm admission as an explicit completed access outcome. `chat_member` observations are stored, but approval jobs finish before confirmed membership is observed.
+- [ ] Complete ineligible join guidance. Partial: requests are declined and reachable private bot contacts receive guidance; other users rely on Telegram decline behavior.
+- [x] Approval jobs await a Telegram member event or membership reconciliation before being marked done.
 - [x] Retry failed Telegram access calls with bounded attempts.
-- [ ] Detect lost bot permissions and alert the creator.
+- [x] Periodic checks classify degraded or disconnected managed connections and queue an alert for reachable creator owners.
 - [ ] Proven safe expiration and removal in Telegram. Local jobs check current entitlements and protect creator/admin accounts.
 - [ ] Proven unban and rejoin after reactivation. Local unban code exists.
 - [x] Scope access jobs by stored community chat and configured billing bot.
 - [x] Protect Telegram creator and administrator accounts from automatic removal.
 - [ ] Voluntary leave and re-entry workflow with live tests. Join requests can be processed again locally.
-- [ ] Reconcile expected and observed access beyond expiration. Only targeted membership reads and expiration processing exist.
-- [ ] Audited creator access overrides.
+- [ ] Complete expected-versus-observed access reconciliation. Partial: rotating known-member reads queue managed grant/removal jobs and expose mismatches; no full Telegram member list is available and live recovery is unverified.
+- [x] Creator-scoped temporary access overrides are audited, expire automatically, and are enforced by join and access workers.
 
 ## P0 — Subscriber communication and onboarding
 
-- [ ] Idempotent payment confirmation message.
-- [ ] Welcome message after **confirmed** access.
-- [ ] Purchased community link in a transactional message.
-- [ ] Community rules, content location, and support onboarding.
-- [ ] Appropriate upcoming-expiry notice.
-- [ ] Successful renewal confirmation.
-- [ ] Failed-renewal notice and recovery path.
-- [ ] Cancellation confirmation with final paid-through date.
-- [ ] Access-revocation notice.
-- [ ] Expired-member reactivation message and link.
-- [ ] Notification deduplication.
-- [ ] Notification delivery-attempt and error records.
+- [x] Verified first payments queue a deduplicated confirmation for reachable private bot contacts.
+- [x] Telegram member confirmation queues a deduplicated welcome message for reachable managed members.
+- [x] Payment and welcome notices include the managed join link when the bot can message the subscriber.
+- [x] Creators can save community rules and content guidance; the Mini App displays them and managed members receive them in the welcome notice with support contact.
+- [x] A scheduler queues one three-day reminder per paid-through date for opted-in reachable members.
+- [x] Verified recurring payments queue a deduplicated renewal confirmation for reachable members.
+- [x] Failed subscription updates queue a notice with the existing paid-through date and Mini App recovery direction.
+- [x] Cancellation flows queue the final paid-through date when a private bot chat exists.
+- [x] Successful managed removal queues a deduplicated notice for reachable members.
+- [x] Expiry notice for reachable members includes a direct community re-subscription link when the public HTTPS origin is configured.
+- [x] Dedupe queued bot command replies with a unique update key.
+- [x] Durable bot command reply queue records bounded attempts and delivery errors.
 
-No notification table, opt-in record, Telegram private-message eligibility check, or delivery worker is present.
+The notification worker now handles private-chat bot commands and lifecycle notices. Users must have contacted the bot; expiry reminders honor a subscriber preference. Live delivery remains unverified.
 
 ## P0 — Subscriber CRM and administration
 
-- [ ] Searchable subscriber directory. Partial: creator-scoped endpoint returns up to 50 known members without search or pagination.
+- [x] Creator directory supports scoped name, username and numeric-ID search with pagination.
 - [x] Store numeric Telegram identity and verified profile fields for members who open the Mini App.
-- [ ] Show the named subscribed plan and community. Partial: the purchased version is stored, but the membership view does not yet display its plan name.
+- [x] Creator directory and member profile show the purchased plan and community context.
 - [x] Show known subscription state in managed mode and observed access in both modes.
-- [ ] Full subscribed-at and paid-through history. Partial: latest paid-through is available.
-- [ ] Creator-visible payment and renewal history per subscriber.
+- [x] Member profile shows known managed subscription start and paid-through history.
+- [x] Member profile shows verified payment and renewal-event history.
 - [x] Show latest observed Telegram access status when available.
-- [ ] Filter by plan, status, and community. Partial: route is scoped to one community.
-- [ ] Individual subscriber profile.
-- [ ] Private administrative notes with role controls.
-- [ ] Manual access interventions with audit trail.
-- [ ] Authorized CSV export.
+- [x] Creator directory is scoped by community and filters by plan and subscription status.
+- [x] Creator can open an individual profile with access, subscriptions, payments and events.
+- [x] Authorized creator roles can add and read private, audited member notes in their community.
+- [x] Creator can grant or revoke temporary managed access with an audit trail and automatic expiry.
+- [x] Creator-scoped member CSV export respects filters and neutralizes spreadsheet formulas.
 
 ## P0 — Creator dashboard and analytics
 
-- [ ] Accurate **distinct** active paid subscriber count. Current aggregate counts subscription rows and can double-count one buyer with multiple subscriptions.
+- [x] Overview counts distinct currently paid Telegram user IDs.
 - [x] Display observed member count with a coverage label.
-- [ ] New subscriptions in a selected period.
-- [ ] Cancellations and expirations in a selected period.
+- [x] Overview counts distinct first-time paying users in a selected period.
+- [x] Overview counts recorded cancellation and entitlement-expiry events by selected period.
 - [ ] Renewal success rate with a defined denominator and complete event coverage.
 - [ ] Reconciled revenue and transaction totals. Partial: recorded gross and refunded Stars are shown, clearly labeled unreconciled.
-- [ ] Paid counts by named plan. Plan versions exist, but the dashboard does not aggregate by plan.
-- [ ] Subscribers awaiting access.
-- [ ] Failed access jobs and reconciliation outcomes in the dashboard.
-- [ ] Date-range filtering.
+- [x] Overview shows distinct active paying users grouped by purchased plan.
+- [x] Overview counts known active entitlements without observed Telegram access.
+- [x] Studio shows failed access job count and known access mismatches; Ops shows reconciliation exceptions.
+- [x] Creator overview and payment CSV accept a bounded selected date range.
 - [x] Label native billing metrics unavailable and managed Stars totals as recorded bot events.
-- [ ] Downloadable reports.
+- [x] Authorized creators can download filtered member and date-scoped payment CSV reports.
 
 ## P0 — MemberOS's own SaaS subscriptions
 
 - [ ] Define and validate commercial plans.
 - [ ] Free/trial and paid SaaS entitlements.
 - [ ] Creator SaaS subscription status and enforcement.
-- [ ] Community and feature limits by SaaS plan.
+- [x] Free and operator-granted pilot accounts enforce connected-community limits in PostgreSQL; managed-billing eligibility and account suspension gate new setup and checkout.
 - [ ] Creator billing and plan-management screen.
 - [ ] Supported SaaS billing integration and settlement contract.
 - [ ] SaaS payment-failure handling that preserves creator data.
@@ -192,28 +192,28 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 
 ## P0 — Support, refunds and disputes
 
-- [ ] `/help`, `/support`, `/terms`, and `/paysupport` bot commands.
-- [ ] Working support contact channel. Partial: creator support contact is displayed as text.
-- [ ] Mini App support request form.
-- [ ] Paid-but-no-access reporting flow.
-- [ ] Creator discrepancy investigation interface.
-- [ ] Controlled refund issuance with role, reason, and audit record.
-- [ ] Support and refund action logs.
-- [ ] Escalation path for unresolved payment issues.
+- [x] `/help`, `/support`, `/terms`, and `/paysupport` commands enqueue private-chat replies. Live bot acceptance remains unverified.
+- [x] Verified Mini App users can file a support request for any published community; the creator can review and resolve it in Studio, and `/paysupport` directs users there. Live delivery remains unverified.
+- [x] Mini App support form for any verified Telegram user viewing a published community, including before checkout and for native-channel offers.
+- [x] Paid subscriber can report missing access through a creator-scoped support ticket.
+- [x] Studio shows known access mismatches, recent payments, and support tickets; admin API lists Stars discrepancies.
+- [ ] Complete controlled refund issuance. Partial: protected admin approval records reason and audit, then calls Telegram; live refund confirmation and published policy remain open.
+- [x] Ticket resolution and refund review actions are recorded in audit and request records.
+- [ ] Complete escalation workflow. Partial: Ops flags tickets open more than 48 hours; assignment and external escalation are absent.
 - [ ] Published refund and cancellation terms before checkout.
 - [ ] Dispute evidence retention and retrieval policy.
 
 ## P0 — MemberOS internal administration
 
-- [ ] Protected internal administrator dashboard.
-- [ ] Creator and community overview for MemberOS staff.
-- [ ] Searchable subscription and access incidents.
-- [ ] Webhook failures and retry/dead-letter interface.
-- [ ] Integration health monitor.
-- [ ] Non-sensitive audit-record viewer.
-- [ ] Support request operations.
+- [x] Protected Ops screen requires the configured platform administrator's verified Telegram session.
+- [x] Ops lists known creators, workspaces and community connection state.
+- [x] Ops searches known subscriptions by user, community, charge or subscription ID and shows failed access jobs.
+- [ ] Full webhook operations UI. Partial: failed and quarantined updates have a protected listing/retry screen with bounded automatic retries; richer incident history is absent.
+- [ ] Full integration health monitor. Partial: periodic bot permission checks and Studio connection status exist.
+- [x] Ops shows recent audit actions with sensitive details withheld.
+- [x] Creator ticket list and resolution UI; protected operations queue for refund requests.
 - [ ] Internal administrator roles and authorization.
-- [ ] Audit of privileged staff actions.
+- [x] Retries, refund approvals, support resolution, and Stars reconciliation starts record the acting operator; reconciliation run rows retain the operator ID.
 
 ## P0 — Security, privacy and legal
 
@@ -227,7 +227,7 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 - [ ] Verified TLS deployment and at-rest protection policy. The service registers HTTPS webhooks, but no deployed environment is configured here.
 - [x] Verify Telegram webhook secret header before ingesting updates.
 - [x] Enforce unique update and charge IDs; PostgreSQL test covers a duplicate charge.
-- [ ] Rate limiting on public and payment endpoints.
+- [x] In-process bounded rate limiting covers public catalog, sessions, checkouts and support requests; distributed limits remain a deployment consideration.
 - [ ] Personal-data retention and deletion policy, plus enforcement jobs.
 - [ ] Backup schedule and tested restore.
 - [ ] Legally reviewed Terms and Privacy Policy.
@@ -238,7 +238,7 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 ## P0 — Backend infrastructure and reliability
 
 - [x] Modular Go executable with separate identity, Telegram, lifecycle, and Mini App packages.
-- [x] Ordered PostgreSQL migrations (`001_initial` through `004_workspaces_plans`).
+- [x] Ordered PostgreSQL migrations from 001_initial through 016_community_onboarding.
 - [ ] Full tenant-aware data model and repository boundary. Partial: explicit workspaces, plan ownership constraints, and tenant API tests exist; repository boundaries and comprehensive cross-tenant tests remain.
 - [x] Durable Telegram webhook inbox before acknowledgement.
 - [x] Reject invalid webhook secrets and deduplicate `(bot_id, update_id)`.
@@ -246,15 +246,15 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 - [ ] Complete provider-independent subscription state machine. Current transitions live in Telegram-specific handlers.
 - [x] Separate entitlement records from payments and observed access.
 - [x] Durable PostgreSQL access job queue with retries.
-- [ ] Operator-visible dead-letter handling and replay for quarantined updates and failed jobs. Terminal states exist, but no recovery interface.
+- [x] Protected operator APIs list and replay failed/quarantined updates and failed access jobs; retries are audited.
 - [x] Separate billing event processing from Telegram access jobs.
-- [ ] Complete expected-versus-observed access reconciliation. Current job checks and targeted reads cover only part of it.
-- [ ] Structured request logs with correlation IDs. Partial: `slog` records worker/startup errors without request IDs.
+- [ ] Complete expected-versus-observed access reconciliation. Partial: periodic known-member checks update observations and queue corrective jobs; live coverage and rate controls remain open.
+- [x] API and health requests emit a response request ID and structured method, path, status and duration logs.
 - [x] Liveness and database readiness endpoints.
-- [ ] Backup and restore tooling.
+- [x] `scripts/backup-db.sh` creates a restricted PostgreSQL archive and `scripts/restore-db.sh` restores into an empty target database. A scheduled backup and tested restore remain release gates.
 - [ ] Complete API validation, authorization, and abuse controls. Partial: body limits and selected role checks exist.
 - [ ] CI/CD pipeline and staging deployment.
-- [ ] Operational alerts for webhook lag, payment gaps, failed access, and permission loss.
+- [x] Periodic operational notices to a reachable configured admin cover delayed/failed webhook work, failed access jobs and missing observed Stars charges after reconciliation; managed community permission changes alert reachable owners. Delivery and response still require live validation.
 
 ## P1 and P2 backlog
 
@@ -303,7 +303,7 @@ These are still open. A related P0 table or route does not imply that a growth o
 
 - [ ] All memberships in one place.
 - [ ] Payment history and available receipts.
-- [ ] Self-service reactivation.
+- [x] An expired managed membership can start a new Stars checkout from its membership screen; Telegram payment then runs through the normal verified activation path. Live reactivation remains a release gate.
 - [ ] Notification preferences.
 - [ ] Personalized onboarding and benefits.
 - [ ] Referral links and available rewards.
@@ -503,8 +503,8 @@ These are still open. A related P0 table or route does not imply that a growth o
 
 1. Choose and verify the first production seller/recipient model with a creator-owned test bot or native channel; run a complete Telegram test-environment purchase and refund.
 2. Validate Studio workspace, chat and plan onboarding against PostgreSQL and Telegram; the UI and APIs are implemented but tests were deferred.
-3. Add payment/Star-transaction reconciliation, subscription event history, dead-letter replay, access mismatch checks, and permission-loss alerts.
-4. Publish legal/support/refund terms and build `/paysupport`, tickets, and controlled refund decisions.
+3. Validate the new operations migrations and run payment, access, retry, and refund scenarios against PostgreSQL and Telegram; then add pagination and proactive permission-loss alerts.
+4. Publish legal, support and refund terms; verify `/paysupport`, tickets, and controlled refund decisions with a real bot.
 5. Finish creator CRM, internal operations, backups, staging, security controls, and pilot acceptance gates.
 
 ## Repository evidence

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"memberos/internal/eventing"
+	"memberos/internal/notify"
 	"strconv"
 	"time"
 
@@ -61,6 +63,18 @@ func ProcessSubscription(ctx context.Context, tx pgx.Tx, botID, updateID int64, 
 	if err := recordSubscriptionEvent(ctx, tx, subscriptionID,
 		"subscription:"+change.Payload+":"+strconv.FormatInt(updateID, 10), "subscription_"+change.State,
 		map[string]any{"paid_through": until, "state": state}); err != nil {
+		return err
+	}
+	var message string
+	switch change.State {
+	case "canceled":
+		message = fmt.Sprintf("Renewal is off. Your paid access remains available through %s.", until.Format("2 Jan 2006"))
+	case "failed":
+		message = fmt.Sprintf("Your renewal payment did not succeed. Existing paid access lasts through %s. Open MemberOS to review your membership or contact support.", until.Format("2 Jan 2006"))
+	case "active":
+		message = fmt.Sprintf("Renewal is active. Your current paid-through date is %s.", until.Format("2 Jan 2006"))
+	}
+	if err := notify.Queue(ctx, tx, botID, buyerID, fmt.Sprintf("subscription:%s:%d", subscriptionID, updateID), message); err != nil {
 		return err
 	}
 	return AuditEvent(ctx, tx, creatorID, buyerID, "subscription_"+change.State, updateID)

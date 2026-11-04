@@ -33,7 +33,8 @@ func (a *app) session(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"token": identity.SignSession(user.ID, a.cfg.sessionSecret, time.Now()), "expires_in": 1800, "telegram_user_id": user.ID})
+	writeJSON(w, http.StatusOK, map[string]any{"token": identity.SignSession(user.ID, a.cfg.sessionSecret, time.Now()), "expires_in": 1800,
+		"telegram_user_id": user.ID, "is_operator": a.cfg.adminTelegramID > 0 && user.ID == a.cfg.adminTelegramID})
 }
 
 func (a *app) sessionUser(r *http.Request) (int64, error) {

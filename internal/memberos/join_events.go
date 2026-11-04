@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"memberos/internal/eventing"
 	"memberos/internal/memberos/billing"
+	"memberos/internal/notify"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -49,12 +50,28 @@ func (a *app) processJoinRequest(ctx context.Context, tx pgx.Tx, updateID int64,
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO access_jobs(community_id,telegram_user_id,action,dedupe_key)
-        SELECT $1,$2,'approve',$3 WHERE EXISTS(SELECT 1 FROM entitlements WHERE community_id=$1
+	var eligible bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM entitlements WHERE community_id=$1
         AND telegram_user_id=$2 AND status='active' AND valid_until>now())
-        ON CONFLICT (dedupe_key) DO NOTHING`, communityID, req.From.ID, fmt.Sprintf("approve:join:%d", updateID))
+        OR EXISTS(SELECT 1 FROM access_overrides WHERE community_id=$1 AND telegram_user_id=$2
+        AND active=true AND valid_until>now())`, communityID, req.From.ID).Scan(&eligible)
 	if err != nil {
 		return err
+	}
+	action := "decline"
+	if eligible {
+		action = "approve"
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO access_jobs(community_id,telegram_user_id,action,dedupe_key)
+        VALUES($1,$2,$3,$4) ON CONFLICT (dedupe_key) DO NOTHING`, communityID, req.From.ID, action, fmt.Sprintf("%s:join:%d", action, updateID))
+	if err != nil {
+		return err
+	}
+	if !eligible {
+		if err := notify.Queue(ctx, tx, a.cfg.botID, req.From.ID, fmt.Sprintf("join-ineligible:%d", updateID),
+			"Your community join request needs an active membership. Open MemberOS to subscribe, then request access again. Contact support if you already paid."); err != nil {
+			return err
+		}
 	}
 	return billing.AuditEvent(ctx, tx, creatorID, req.From.ID, "join_requested", updateID)
 }

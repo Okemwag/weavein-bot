@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"memberos/internal/eventing"
+	"memberos/internal/notify"
 	"memberos/internal/telegram"
 	"time"
 
@@ -50,6 +52,36 @@ func (a *app) processChatMember(ctx context.Context, tx pgx.Tx, updateID int64, 
 		WHERE access_observations.observed_at <= EXCLUDED.observed_at`, communityID, update.ChatMember.New.User.ID,
 		update.ChatMember.New.Status, telegram.MemberUntil(update.ChatMember.New.UntilDate), observedAt); err != nil {
 		return err
+	}
+	if update.ChatMember.New.Status == "member" {
+		if _, err := tx.Exec(ctx, `UPDATE access_jobs SET status='done',last_error=NULL,finished_at=now()
+            WHERE community_id=$1 AND telegram_user_id=$2 AND action='approve' AND status='awaiting_confirmation'`,
+			communityID, update.ChatMember.New.User.ID); err != nil {
+			return err
+		}
+		var subID, title, joinLink, support, rules, guide string
+		var botID int64
+		err = tx.QueryRow(ctx, `SELECT e.subscription_id,c.title,coalesce(c.managed_join_link,''),cr.support_contact,c.billing_bot_id,c.rules,c.content_guide
+            FROM entitlements e JOIN communities c ON c.id=e.community_id JOIN creators cr ON cr.id=c.creator_id
+            WHERE e.community_id=$1 AND e.telegram_user_id=$2 AND e.status='active' AND e.valid_until>now()
+            AND c.billing_mode='managed_bot' ORDER BY e.valid_until DESC LIMIT 1`, communityID, update.ChatMember.New.User.ID).
+			Scan(&subID, &title, &joinLink, &support, &botID, &rules, &guide)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			message := fmt.Sprintf("Welcome to %s. Your community access is confirmed. Open the community: %s.", title, joinLink)
+			if rules != "" {
+				message += " Rules: " + rules
+			}
+			if guide != "" {
+				message += " Where to begin: " + guide
+			}
+			message += " Support: " + support
+			if err := notify.Queue(ctx, tx, botID, update.ChatMember.New.User.ID, "welcome:"+subID, message); err != nil {
+				return err
+			}
+		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_events(creator_id,subject_telegram_user_id,action,update_id,details)
 		VALUES($1,$2,'chat_member_observed',$3,jsonb_build_object('status',$4))`, creatorID,

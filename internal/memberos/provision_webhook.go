@@ -22,7 +22,8 @@ func (a *app) publishProvisioned(ctx context.Context, communityID, webhookURL st
 	if !configured {
 		return errors.New("telegram did not confirm webhook setup")
 	}
-	if _, err := a.db.Exec(ctx, `UPDATE communities SET status='published',bot_admin_verified_at=now() WHERE id=$1`, communityID); err != nil {
+	if _, err := a.db.Exec(ctx, `UPDATE communities SET status='published',bot_admin_verified_at=now(),
+        connection_status='healthy',last_permission_check_at=now(),last_permission_error=NULL WHERE id=$1`, communityID); err != nil {
 		return err
 	}
 	slog.Info("community published", "community_id", communityID)

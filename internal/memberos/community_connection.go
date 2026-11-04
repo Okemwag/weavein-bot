@@ -58,6 +58,20 @@ func (a *app) connectCommunity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "managed billing is not enabled for this workspace", http.StatusForbidden)
 		return
 	}
+	var saasActive, managedAllowed bool
+	var used, communityLimit int
+	err = a.db.QueryRow(r.Context(), `SELECT sa.status='active',sa.managed_billing_allowed,sa.community_limit,
+		(SELECT count(*) FROM communities c WHERE c.workspace_id=sa.workspace_id AND c.status<>'archived')
+		FROM saas_accounts sa WHERE sa.workspace_id=$1`, workspaceID).
+		Scan(&saasActive, &managedAllowed, &communityLimit, &used)
+	if err != nil {
+		http.Error(w, "SaaS account unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !saasActive || used >= communityLimit || (body.Mode == "managed_bot" && !managedAllowed) {
+		http.Error(w, "workspace community allowance does not permit this connection", http.StatusForbidden)
+		return
+	}
 	var exists bool
 	if err := a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM communities WHERE telegram_chat_id=$1)`, body.ChatID).Scan(&exists); err != nil {
 		http.Error(w, "database error", 500)

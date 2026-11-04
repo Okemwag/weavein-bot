@@ -16,7 +16,9 @@ Go and PostgreSQL service for Telegram paid-community membership. The [product i
 | `internal/memberos/billing` | Payment, subscription, refund, entitlement, and billing audit processing |
 | `internal/memberos/access` | Telegram access jobs and entitlement expiry reconciliation |
 | `web/miniapp` | Embedded subscriber and creator Mini App |
+| `web/publicsite` | Embedded public homepage, walkthrough, and creator contact form |
 | `docs` | Engineering specification and product boundaries |
+| `scripts` | PostgreSQL backup and empty-target restore tools |
 
 ### File boundaries
 
@@ -37,12 +39,15 @@ Go and PostgreSQL service for Telegram paid-community membership. The [product i
 - Refreshes a subscriber's status with `getChatMember` and shows known subscription expiry, observation time, and freshness.
 - Exposes a creator overview of **observed** members. Telegram native-channel billing amounts, renewal events, and refunds are unavailable.
 - Supports a separately provisioned managed mode for a private channel or supergroup: Stars invoice checkout, pre-checkout validation, verified payment and refund updates, subscription changes, entitlement projection, join approval, expiry reconciliation, and guarded removal.
-- Serves a Telegram Mini App at `/app/` with community discovery, subscription status, native or managed checkout, join access, renewal cancellation, and a creator overview with known members.
+- Serves a Telegram Mini App at `/app/` with community discovery, subscription status, native or managed checkout, join access, renewal cancellation, support requests, and a creator overview with known members.
 - Creates creator workspaces from verified Telegram sessions. Managed communities can publish named plans with immutable price and terms versions; checkout and the first payment retain the purchased version. Creators can pause or archive new plan sales.
 - The creator Studio can connect a private channel or supergroup after checking the signed-in chat owner and bot permissions. A webhook failure leaves a draft that the owner can recheck and publish later.
 - Studio shows saved onboarding progress, lets owners edit their public creator name and support contact, and manages named offers for managed communities. Owners can publish a new plan version, pause or resume new sales, archive a plan, and copy the enrollment link.
+- Studio also shows a searchable member directory, profile history, access overrides, verified payment records, support requests, CSV exports, and date-filtered observed metrics. The protected Ops screen exposes failed work, incident search, connection health, and Stars discrepancies.
+- The public homepage at `/` explains the product and offers an interactive walkthrough and creator inquiry form. Ops can review those inquiries. Creators can save category, rules, and content guidance for subscriber onboarding.
+- A free MemberOS account allows one connected community. An operator can grant a recorded pilot allowance; the database enforces its community limit. Paid MemberOS SaaS billing is not configured.
 
-Managed mode uses the one configured bot per service deployment as the Stars recipient. The operator must verify that the bot belongs to the creator before enabling it. Automated creator-owned bot onboarding, retention campaigns, and Telegram live-flow validation are still outstanding. Financial dashboard figures cover only bot events recorded by MemberOS; they are not reconciled against Telegram's Stars balance yet.
+Managed mode uses the one configured bot per service deployment as the Stars recipient. The operator must verify that the bot belongs to the creator before enabling it. Automated creator-owned bot onboarding, retention campaigns, and Telegram live-flow validation are still outstanding. Financial dashboard figures cover only bot events recorded by MemberOS; the Ops reconciliation can compare those records with bot transaction observations, but no live reconciliation has been verified.
 
 ## Configuration
 
@@ -60,6 +65,10 @@ The service reads environment variables; it does not automatically load `.env`.
 | `BOT_STARS_RECIPIENT_ACK` | Must equal `TELEGRAM_BOT_ID` for managed mode; explicit acknowledgement of the receiving bot |
 | `MANAGED_BILLING_WORKSPACE_ID` | Operator-approved workspace UUID allowed to connect managed billing through the configured recipient bot in the Mini App |
 | `PUBLIC_WEBHOOK_URL` | HTTPS public origin used by Studio connection and CLI provisioning to register the Telegram webhook |
+| `TELEGRAM_BOT_USERNAME` | Optional bot username for public website links into the Telegram Mini App |
+| `MEMBEROS_ADMIN_TELEGRAM_ID` | Optional numeric Telegram ID allowed to use the protected operations APIs; without it those APIs are disabled |
+
+Operations APIs require a fresh Mini App bearer session for `MEMBEROS_ADMIN_TELEGRAM_ID`. `GET /api/v1/admin/updates` and `GET /api/v1/admin/access-jobs` list failed work; their `POST .../retry` endpoints requeue a selected item and audit the action. `POST /api/v1/admin/reconcile-access` checks known members, while `POST /api/v1/admin/reconcile-stars` pages through the bot transactions returned by Telegram and records the operator. `GET /api/v1/admin/star-discrepancies` reports unmatched observations and recorded charges. `GET /api/v1/admin/refund-requests` lists requests; `POST /api/v1/admin/refund-requests/{id}/approve` calls `refundStarPayment` once and then waits for Telegram's refund update. An uncertain refund result remains `needs_review` and requires operator investigation before any further action.
 
 For the one-time `provision` or `provision-managed` command also set `CREATOR_TELEGRAM_ID`, `CHANNEL_CHAT_ID`, `CHANNEL_PRICE_STARS` (1–10000), `CREATOR_NAME`, `SUPPORT_CONTACT`, `CHANNEL_TITLE`, and `CHANNEL_DESCRIPTION`. The creator ID must own the private channel or supergroup. Native mode requires the bot's `can_invite_users` right. Managed mode also requires `can_restrict_members` and the two managed billing variables above. Provisioning calls Telegram and creates an invite link; run it once per community.
 
@@ -73,6 +82,8 @@ go run ./cmd/memberos
 ```
 
 The service applies ordered migrations in `internal/store/migrations` at startup. For local verification with a restricted Go cache:
+
+To create a PostgreSQL archive, set `DATABASE_URL` and run `scripts/backup-db.sh /secure/path/memberos.dump`. The script refuses to replace an existing file. To restore, create a separate empty database, set `RESTORE_DATABASE_URL` to its connection URI, and run `scripts/restore-db.sh /secure/path/memberos.dump`. The restore script refuses a database with tables in its public schema. Schedule encrypted offsite copies and exercise a real restore before production.
 
 ```sh
 GOCACHE=/tmp/memberos-gocache GOPROXY=off go test ./...

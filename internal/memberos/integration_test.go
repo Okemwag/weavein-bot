@@ -63,6 +63,10 @@ func TestManagedPaymentLifecyclePostgres(t *testing.T) {
 	if _, err := db.Exec(ctx, `INSERT INTO workspace_members(workspace_id,telegram_user_id,role) VALUES($1,99,'owner')`, workspaceID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(ctx, `UPDATE saas_accounts SET plan_code='pilot',community_limit=5,
+		managed_billing_allowed=true,granted_reason='Integration fixture' WHERE workspace_id=$1`, workspaceID); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.QueryRow(ctx, `INSERT INTO communities(creator_id,telegram_chat_id,title,price_stars,billing_mode,
 		managed_join_link,billing_bot_id,status,workspace_id) VALUES($1,$2,'Test',100,'managed_bot','https://t.me/+test',123,'published',$3) RETURNING id`,
 		creatorID, -time.Now().UnixNano(), workspaceID).Scan(&communityID); err != nil {
@@ -110,6 +114,10 @@ func TestManagedPaymentLifecyclePostgres(t *testing.T) {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(workspaceResponse.Body.Bytes(), &newWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `UPDATE saas_accounts SET plan_code='pilot',community_limit=5,
+		managed_billing_allowed=true,granted_reason='Integration fixture' WHERE workspace_id=$1`, newWorkspace.ID); err != nil {
 		t.Fatal(err)
 	}
 	connector := &app{cfg: config{botID: 123, sessionSecret: a.cfg.sessionSecret, managedEnabled: true, botRecipientAck: "123", managedWorkspaceID: newWorkspace.ID, publicWebhookURL: "https://memberos.example"}, db: db}

@@ -3,6 +3,7 @@ package memberos
 import (
 	"errors"
 	"memberos/internal/memberos/billing"
+	"memberos/internal/notify"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -64,6 +65,18 @@ func (a *app) cancelSubscription(w http.ResponseWriter, r *http.Request) {
 	_, err = tx.Exec(r.Context(), `UPDATE subscriptions SET state='cancel_scheduled',auto_renew_state='off',
         canceled_at=now(),updated_at=now() WHERE id=$1`, subscriptionID)
 	if err != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	_, err = tx.Exec(r.Context(), `INSERT INTO subscription_events(subscription_id,event_key,kind,details)
+        VALUES($1,$2,'cancellation_requested',jsonb_build_object('paid_through',$3))
+        ON CONFLICT (event_key) DO NOTHING`, subscriptionID, "cancel:"+subscriptionID, through)
+	if err != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	if err := notify.Queue(r.Context(), tx, botID, userID, "cancel:"+subscriptionID,
+		"Renewal is off. Your paid access remains available through "+through.Format("2 Jan 2006")+"."); err != nil {
 		http.Error(w, "database error", 500)
 		return
 	}

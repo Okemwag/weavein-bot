@@ -7,7 +7,8 @@ import (
 )
 
 type Service struct {
-	DB       *pgxpool.Pool
-	Telegram telegram.Client
-	BotID    int64
+	DB        *pgxpool.Pool
+	Telegram  telegram.Client
+	BotID     int64
+	AppOrigin string
 }

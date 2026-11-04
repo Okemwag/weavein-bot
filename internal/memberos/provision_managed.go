@@ -75,6 +75,11 @@ func (a *app) provisionManaged(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if _, err := tx.Exec(ctx, `UPDATE saas_accounts SET plan_code='pilot',community_limit=greatest(community_limit,5),
+		managed_billing_allowed=true,granted_reason='CLI operator approved managed billing recipient',updated_at=now()
+		WHERE workspace_id=$1 AND status='active'`, workspaceID); err != nil {
+		return err
+	}
 	var communityID string
 	if err := tx.QueryRow(ctx, `INSERT INTO communities(creator_id,workspace_id,telegram_chat_id,title,description,price_stars,
 		billing_mode,managed_join_link,billing_bot_id,bot_admin_verified_at) VALUES($1,$2,$3,$4,$5,$6,'managed_bot',$7,$8,$9) RETURNING id`,

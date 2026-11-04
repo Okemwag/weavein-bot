@@ -25,6 +25,7 @@ func (a *app) answerPreCheckout(ctx context.Context, botID, updateID int64, raw 
 	}
 	var valid bool
 	err := a.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM checkout_attempts ca JOIN communities c ON c.id=ca.community_id
+		JOIN saas_accounts sa ON sa.workspace_id=c.workspace_id AND sa.status='active' AND sa.managed_billing_allowed
         WHERE ca.invoice_payload=$1 AND ca.telegram_user_id=$2 AND ca.billing_bot_id=$3
         AND ca.price_stars=$4 AND ca.status='pending' AND ca.expires_at>now()
         AND c.status='published' AND c.billing_mode='managed_bot' AND c.billing_bot_id=$3)`,

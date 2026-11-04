@@ -3,8 +3,10 @@ package billing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"memberos/internal/eventing"
 	"memberos/internal/models"
+	"memberos/internal/notify"
 	"memberos/internal/store"
 	"time"
 
@@ -88,7 +90,7 @@ func recordPayment(ctx context.Context, tx pgx.Tx, botID, updateID int64, messag
 	if err != nil {
 		return err
 	}
-	if err := recordSubscriptionEvent(ctx, tx, subscriptionID, "payment:"+p.ChargeID, "payment_verified",
+	if err := recordSubscriptionEvent(ctx, tx, subscriptionID, "payment:"+subscriptionID+":"+p.ChargeID, "payment_verified",
 		map[string]any{"charge_id": p.ChargeID, "amount_stars": p.Amount, "paid_through": until, "first": p.First}); err != nil {
 		return err
 	}
@@ -102,6 +104,21 @@ func recordPayment(ctx context.Context, tx pgx.Tx, botID, updateID int64, messag
 	_, err = tx.Exec(ctx, `INSERT INTO access_jobs(community_id,telegram_user_id,action,dedupe_key)
         VALUES($1,$2,'approve',$3) ON CONFLICT (dedupe_key) DO NOTHING`, communityID, buyerID, "approve:payment:"+p.ChargeID)
 	if err != nil {
+		return err
+	}
+	var title, joinLink, support string
+	if err := tx.QueryRow(ctx, `SELECT c.title,coalesce(c.managed_join_link,''),cr.support_contact
+        FROM communities c JOIN creators cr ON cr.id=c.creator_id WHERE c.id=$1`, communityID).
+		Scan(&title, &joinLink, &support); err != nil {
+		return err
+	}
+	label := "Renewal confirmed"
+	if p.First {
+		label = "Payment confirmed"
+	}
+	noticeText := fmt.Sprintf("%s for %s: %d Stars. Paid access through %s. Request community access: %s. Support: %s",
+		label, title, p.Amount, until.Format("2 Jan 2006"), joinLink, support)
+	if err := notify.Queue(ctx, tx, botID, buyerID, "payment:"+p.ChargeID, noticeText); err != nil {
 		return err
 	}
 	return AuditEvent(ctx, tx, creatorID, buyerID, "payment_recorded", updateID)

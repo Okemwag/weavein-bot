@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"memberos/internal/eventing"
+	"memberos/internal/notify"
 	"memberos/internal/store"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -39,7 +41,7 @@ func recordRefund(ctx context.Context, tx pgx.Tx, botID, updateID int64, message
 	if refundedAt != nil {
 		return nil
 	}
-	if err := recordSubscriptionEvent(ctx, tx, subscriptionID, "refund:"+p.ChargeID,
+	if err := recordSubscriptionEvent(ctx, tx, subscriptionID, "refund:"+subscriptionID+":"+p.ChargeID,
 		"payment_refunded", map[string]any{"charge_id": p.ChargeID, "amount_stars": p.Amount}); err != nil {
 		return err
 	}
@@ -62,6 +64,10 @@ func recordRefund(ctx context.Context, tx pgx.Tx, botID, updateID int64, message
 	_, err = tx.Exec(ctx, `INSERT INTO access_jobs(community_id,telegram_user_id,action,dedupe_key)
         VALUES($1,$2,'remove',$3) ON CONFLICT (dedupe_key) DO NOTHING`, communityID, buyerID, "remove:refund:"+p.ChargeID)
 	if err != nil {
+		return err
+	}
+	if err := notify.Queue(ctx, tx, botID, buyerID, "refund:"+p.ChargeID,
+		"Your "+strconv.Itoa(p.Amount)+" Stars refund was confirmed. Open MemberOS to review your current access and support options."); err != nil {
 		return err
 	}
 	return AuditEvent(ctx, tx, creatorID, buyerID, "payment_refunded", updateID)
