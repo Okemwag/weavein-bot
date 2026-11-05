@@ -52,7 +52,7 @@ Managed mode uses the one configured bot per service deployment as the Stars rec
 
 ## Configuration
 
-The service reads environment variables; it does not automatically load `.env`.
+The service reads environment variables. For local use, fill in the Git-ignored `.env` and run `scripts/run-local.sh`; the script exports its values before starting the Go service. Do not commit `.env` or put real credentials in documentation.
 
 | Variable | Purpose |
 | --- | --- |
