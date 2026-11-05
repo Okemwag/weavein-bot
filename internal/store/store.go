@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 
@@ -24,6 +25,27 @@ func Migrate(ctx context.Context, db *pgxpool.Pool) error {
 		return err
 	}
 	defer func() { _, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock(8441631001)") }()
+	var tableCount int
+	var migrationTable bool
+	if err := conn.QueryRow(ctx, `SELECT count(*),
+		to_regclass(current_schema() || '.schema_migrations') IS NOT NULL
+		FROM information_schema.tables WHERE table_schema=current_schema() AND table_type='BASE TABLE'`).
+		Scan(&tableCount, &migrationTable); err != nil {
+		return err
+	}
+	if tableCount > 0 && !migrationTable {
+		return errors.New("database schema contains unrelated tables without MemberOS migrations; use a dedicated empty database or schema")
+	}
+	if migrationTable {
+		var memberOSHistory bool
+		if err := conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name='001_initial.sql')`).
+			Scan(&memberOSHistory); err != nil {
+			return err
+		}
+		if tableCount > 1 && !memberOSHistory {
+			return errors.New("database schema has a non-MemberOS migration history; use a dedicated empty database or schema")
+		}
+	}
 	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
