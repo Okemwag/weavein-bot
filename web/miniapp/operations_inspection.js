@@ -1,8 +1,30 @@
-import { api, node, el, notice, date, actionButton, fold, textSheet, statusPill } from './shared.js';
+import { api, node, el, notice, date, stars, actionButton, fold, textSheet, statusPill } from './shared.js';
 
 const auditLabels = { payment_recorded: 'Payment recorded', payment_refunded: 'Payment refunded', refund_approval: 'Refund sent', refund_rejected: 'Refund declined',
   subscription_canceled_by_member: 'Member cancelled renewal', community_connected: 'Community connected', community_disconnected: 'Community disconnected',
-  duplicate_subscription_detected: 'Duplicate payment found', access_override_granted: 'Free access given', access_override_revoked: 'Free access ended' };
+  duplicate_subscription_detected: 'Duplicate payment found', access_override_granted: 'Free access given', access_override_revoked: 'Free access ended',
+  saas_payment_recorded: 'Pro payment', saas_refund_recorded: 'Pro refunded', saas_refund_approval: 'Pro refund sent', saas_pro_lapsed: 'Pro ended',
+  saas_duplicate_subscription: 'Duplicate Pro payment', saas_subscription_canceled: 'Pro renewal cancelled', saas_subscription_failed: 'Pro renewal failed' };
+
+// proPaymentRow lists one MemberOS Pro charge with a single-use refund action.
+function proPaymentRow(payment, reload) {
+  const status = payment.refunded_at ? 'Refunded' : payment.refund_status === 'needs_review' ? 'Check in Telegram' : payment.refund_status === 'submitted' ? 'Refund sent' : 'Paid';
+  const row = el('div', 'list-row', el('span', 'grow', node('span', 'title', `${payment.workspace_name} · ${stars(payment.price_stars)}`),
+    node('span', 'sub', `${date(payment.paid_at)} · paid by ${payment.payer_telegram_user_id}`)), node('span', 'pill', status));
+  if (!payment.refunded_at && !payment.refund_status) {
+    row.append(actionButton('Refund', 'text-button', async () => {
+      const reason = await textSheet({ title: 'Refund this Pro payment?', body: 'Telegram returns the Stars to the payer and Pro ends unless another payment covers it. This can be sent only once.',
+        label: 'Reason', confirm: 'Send refund', minLength: 10, maxLength: 500 });
+      if (!reason) return;
+      try {
+        await api(`/api/v1/admin/saas/payments/${encodeURIComponent(payment.id)}/refund`, { method: 'POST', body: JSON.stringify({ reason }) });
+        notice('Refund sent. It completes when Telegram confirms it.');
+      } catch (error) { notice(error.message, true); }
+      await reload();
+    }));
+  }
+  return row;
+}
 
 function ticketCard(ticket, reload) {
   const flag = ticket.escalated_at ? 'With you' : ticket.escalation_due ? 'Overdue' : 'Open';
@@ -74,6 +96,7 @@ async function renderInspection(content, updateName) {
     api('/api/v1/admin/health'), api('/api/v1/admin/creators'), api('/api/v1/admin/support-tickets'), api('/api/v1/admin/audit'),
     api('/api/v1/admin/creator-inquiries'), api('/api/v1/admin/saas-finance'), api('/api/v1/admin/updates'),
   ]);
+  const proPayments = await api('/api/v1/admin/saas/payments').catch(() => ({ payments: [] }));
   const ticketArea = node('div', 'stack');
   function renderTickets() {
     return api('/api/v1/admin/support-tickets').then((data) => ticketArea.replaceChildren(...data.tickets.map((ticket) => ticketCard(ticket, reload))));
@@ -103,7 +126,18 @@ async function renderInspection(content, updateName) {
   content.append(fold('Recent activity', false, ...audit.audit.map((entry) => el('div', 'list-row', el('span', 'grow', node('span', 'title', auditLabels[entry.action] || entry.action.replaceAll('_', ' ')),
     node('span', 'sub', date(entry.at)))))));
   if (saas.saas_revenue.length) {
-    content.append(fold('MemberOS revenue', false, ...saas.saas_revenue.map((entry) => node('p', '', `${entry.currency} ${entry.net_minor} minor units from ${entry.events} events`))));
+    content.append(fold('MemberOS revenue', false, ...saas.saas_revenue.map((entry) => node('p', '', entry.currency === 'XTR'
+      ? `${stars(entry.net_minor)} net from ${entry.events} Pro events (${stars(entry.refunded_minor)} refunded)`
+      : `${entry.currency} ${entry.net_minor} minor units from ${entry.events} events`))));
+  }
+  if (proPayments.payments.length) {
+    const area = node('div', 'stack');
+    const drawPro = async () => {
+      const latest = await api('/api/v1/admin/saas/payments').catch(() => proPayments);
+      area.replaceChildren(...latest.payments.map((payment) => proPaymentRow(payment, drawPro)));
+    };
+    area.append(...proPayments.payments.map((payment) => proPaymentRow(payment, drawPro)));
+    content.append(fold(`Pro payments (${proPayments.payments.length})`, false, area));
   }
 }
 

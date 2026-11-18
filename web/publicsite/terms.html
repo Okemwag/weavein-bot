@@ -1,0 +1,57 @@
+{{define "title"}}Terms of Service{{end}}
+{{define "body"}}
+<p>These terms apply when you use MemberOS, whether you run a community on it (a "creator") or join one (a "member"). By using MemberOS you agree to them. Telegram's Terms of Service and the Terms of Service for Telegram Stars also apply to everything you do in Telegram.</p>
+
+<h2>What MemberOS does</h2>
+<p>MemberOS is a tool for selling access to private Telegram channels and groups. It shows the offer, takes Telegram Stars payments where the community uses MemberOS billing, lets paying members in, and removes them when their access ends. MemberOS does not create or review community content.</p>
+
+<h2>Who sells a membership</h2>
+<ul>
+  <li>The <strong>creator</strong> named on the offer is the seller of each community membership and is responsible for the community, its content, and what they promise members.</li>
+  <li>In a <strong>Telegram channel subscription</strong>, Telegram bills the member directly and pays the creator. MemberOS only shows the offer and the member's status.</li>
+  <li>In a <strong>MemberOS-billed community</strong>, the member pays in Stars through the bot configured for that community, and MemberOS records the payment and controls access for the creator.</li>
+  <li>For <strong>MemberOS's own plans</strong>, the seller is {{.Operator.LegalName}}.</li>
+</ul>
+
+<h2>Memberships: renewals and cancellation</h2>
+<ul>
+  <li>Memberships renew every 30 days at the price shown before you paid, until you cancel.</li>
+  <li>You can turn off renewal at any time: in MemberOS for MemberOS-billed communities, or in Telegram under Settings &gt; My Stars for Telegram channel subscriptions. You keep access until the end of the period you paid for.</li>
+  <li>In MemberOS-billed communities, while your renewal is on, you keep access for 24 hours past your paid-through date so a late renewal charge does not cut you off. If you cancelled, or Telegram reports that the renewal failed, access ends on your paid-through date until you pay again.</li>
+  <li>Refunds are covered by our <a href="/refunds">Refund Policy</a>. A refunded membership ends straight away and does not renew.</li>
+</ul>
+
+<h2>Creator plans</h2>
+<ul>
+  <li><strong>Free</strong> lets you connect one community.</li>
+  {{if .Pricing.ProAvailable}}<li><strong>Pro</strong> costs {{.Pricing.ProStars}} Telegram Stars every 30 days and lets you connect up to {{.Pricing.ProCommunities}} communities. Telegram requires payment for digital services in Stars; what you pay in local currency depends on how you buy them.</li>{{end}}
+  <li>Pro renews automatically until you cancel it in MemberOS &gt; Settings. You keep Pro until the end of the period you paid for.</li>
+  <li>If a Pro payment does not arrive, Pro continues for {{.Pricing.GraceDays}} days after the paid period. After that your account returns to Free limits.</li>
+  <li><strong>We never delete your communities, members or history because a Pro payment stopped.</strong> Your existing communities keep running and your members keep their access. You simply cannot connect new communities beyond the Free limit until you upgrade again.</li>
+  <li>We may change Pro pricing for future periods. We will tell you at least 30 days before a change applies to you, and you can cancel before then.</li>
+  <li>Early access accounts given an allowance by us are not charged unless we agree otherwise in writing.</li>
+</ul>
+
+<h2>Creator responsibilities</h2>
+<ul>
+  <li>You must own, or be authorised to manage, every chat you connect, and keep MemberOS's bot as an administrator with the permissions it needs.</li>
+  <li>Your offers must describe honestly what members get, and you must honour refunds you or we approve under the Refund Policy.</li>
+  <li>You are responsible for the content of your community, for your own taxes, and for following the laws that apply to what you sell.</li>
+  <li>You must use member information only to run your community, keep it secure, and handle it as our <a href="/privacy">Privacy Policy</a> describes.</li>
+</ul>
+
+<h2>Acceptable use</h2>
+<p>You may not use MemberOS to sell or share illegal content, content that sexually exploits anyone, or content that infringes someone else's rights; to deceive members or take payment for something you do not provide; to harass anyone; or to interfere with, probe or overload the service. You must follow Telegram's rules. We may pause or remove a community or account that breaks these terms or Telegram's rules, or that we are legally required to stop. Where we can, we will tell you why and let you fix it first.</p>
+
+<h2>Availability</h2>
+<p>MemberOS depends on Telegram, which we do not control. We work to keep it running and to recover safely from outages, but we do not promise it will always be available or error-free. If Telegram is unavailable or changes how payments or chats work, some features may stop working.</p>
+
+<h2>Liability</h2>
+<p>To the extent the law allows, MemberOS is provided as is. {{.Operator.LegalName}} is not liable for indirect or consequential losses, lost profits, or what creators publish or promise in their communities. Our total liability to a creator for any claim is limited to the fees that creator paid us in the 12 months before the claim, and to a member, to the amount they paid for the membership in question. Nothing in these terms limits liability that cannot be limited by law, or any rights you have as a consumer.</p>
+
+<h2>Ending use</h2>
+<p>You can stop using MemberOS at any time. Creators can close a community or ask us to delete their workspace from MemberOS &gt; Settings. Payment records we must keep by law are kept as the Privacy Policy describes.</p>
+
+<h2>Changes and disputes</h2>
+<p>We will post changes here with a new effective date and give notice of material changes through the bot or the Mini App. These terms are governed by the laws of {{.Operator.Country}}. Please contact us first at <a href="mailto:{{.Operator.Email}}">{{.Operator.Email}}</a> so we can try to resolve any problem. If we cannot, the courts of {{.Operator.Country}} will decide, unless the law where you live gives you the right to bring a claim there.</p>
+{{end}}

@@ -1,4 +1,4 @@
-import { state, node, el, api, notice, actionButton, field, submitForm, submitButton, fold, confirmSheet } from './shared.js';
+import { tg, state, node, el, api, notice, actionButton, field, submitForm, submitButton, fold, confirmSheet, openTelegramLink, date, stars } from './shared.js';
 
 function communityForm(context, guidance) {
   const form = el('form', 'form', field('Category', 'category', { required: false, maxLength: 80, value: guidance.category, placeholder: 'Trading, fitness, language…' }),
@@ -79,19 +79,75 @@ function dangerZone(context) {
   return items.length ? fold('Close or delete', false, ...items) : null;
 }
 
+const planLabel = (account) => (account.status !== 'active' ? 'Paused'
+  : ({ pilot: 'Early access', pro: 'Pro', free: 'Free' })[account.plan] || 'Free');
+
+// planCard shows the MemberOS plan, community allowance and Pro billing controls.
+function planCard(context, account, isOwner, reload) {
+  const full = account.communities_used >= account.community_limit;
+  const add = actionButton('Add another community', 'button secondary full', async () => context.addCommunity());
+  add.disabled = full || account.status !== 'active';
+  const card = el('div', 'card', el('div', 'section-title', node('h2', '', 'Your plan'),
+    node('span', `pill ${account.status === 'active' ? 'good' : 'warn'}`, planLabel(account))),
+  node('p', '', `You're using ${account.communities_used} of ${account.community_limit} ${account.community_limit === 1 ? 'community' : 'communities'}.`));
+  const offer = account.pro_offer;
+  const sub = account.subscription;
+  if (sub) {
+    const line = { active: `Pro renews on ${date(sub.paid_through)}.`,
+      cancel_scheduled: `Pro won't renew. It stays on until ${date(sub.paid_through)}.`,
+      payment_failed: `Your last Pro payment didn't go through. Pro stays on for ${offer.grace_days} days after ${date(sub.paid_through)}; top up your Stars so Telegram can retry.` }[sub.state];
+    if (line) card.append(node('p', sub.state === 'active' ? 'muted' : '', line));
+    if (isOwner && sub.you_paid && sub.state !== 'payment_failed') {
+      const cancelling = sub.state === 'active';
+      card.append(actionButton(cancelling ? 'Cancel Pro renewal' : 'Turn Pro renewal back on', 'text-button', async () => {
+        if (cancelling && !await confirmSheet({ title: 'Cancel Pro?', body: `Pro stays on until ${date(sub.paid_through)}. After that your communities keep running, but you can't add more than the Free plan allows.`, confirm: 'Cancel renewal', cancel: 'Keep Pro', danger: true })) return;
+        try {
+          await api(`/api/v1/creator/workspaces/${encodeURIComponent(account.workspace_id)}/saas/${cancelling ? 'cancel' : 'resume'}`, { method: 'POST' });
+          notice(cancelling ? "Pro won't renew." : 'Pro renewal is back on.');
+          await reload();
+        } catch (error) { notice(error.message, true); }
+      }));
+    }
+  } else if (account.lapsed_at && account.plan === 'free') {
+    card.append(node('p', '', 'Pro has ended. Your communities and members are all still here; upgrade again to add more.'));
+  }
+  card.append(add);
+  if (offer?.available && !sub && isOwner) {
+    card.append(el('div', 'stack', node('p', '', `Pro: up to ${offer.community_limit} communities for ${stars(offer.price_stars)} every ${offer.period_days} days. Cancel anytime.`),
+      actionButton(`Upgrade to Pro for ${stars(offer.price_stars)}`, 'button full', () => upgradeToPro(account, reload))));
+  } else if (full && !sub && account.plan !== 'pilot') {
+    card.append(node('p', '', 'Need more? Contact the MemberOS team.'));
+  }
+  return card;
+}
+
+async function upgradeToPro(account, reload) {
+  const checkout = await api(`/api/v1/creator/workspaces/${encodeURIComponent(account.workspace_id)}/saas/checkout`, { method: 'POST' });
+  if (!tg?.openInvoice) { openTelegramLink(checkout.invoice_url); return; }
+  tg.openInvoice(checkout.invoice_url, async (outcome) => {
+    if (outcome === 'cancelled') { notice("Payment cancelled. You haven't been charged."); return; }
+    if (outcome === 'failed') { notice('The payment did not go through. Please try again.', true); return; }
+    notice('Confirming your payment…');
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const latest = await api(`/api/v1/creator/workspaces/${encodeURIComponent(account.workspace_id)}/saas`).catch(() => null);
+      if (latest?.subscription) {
+        tg.HapticFeedback?.notificationOccurred?.('success');
+        notice("You're on Pro. Thanks!");
+        await reload();
+        return;
+      }
+    }
+    notice('Telegram is still confirming your payment. Check back in a moment.');
+  });
+}
+
 async function renderSettings(content, context) {
   const { workspace } = context;
   const [guidance, account] = await Promise.all([api(`${context.root}/onboarding`), api(`/api/v1/creator/workspaces/${encodeURIComponent(workspace.id)}/saas`).catch(() => null)]);
   content.replaceChildren(communityForm(context, guidance));
   if (workspace.role === 'owner') content.append(profileForm(context), preferencesForm(context));
-  if (account) {
-    const full = account.communities_used >= account.community_limit;
-    const add = actionButton('Add another community', 'button secondary full', async () => context.addCommunity());
-    add.disabled = full || account.status !== 'active';
-    content.append(el('div', 'card', el('div', 'section-title', node('h2', '', 'Your account'), node('span', `pill ${account.status === 'active' ? 'good' : 'warn'}`, account.status === 'active' ? (account.plan === 'pilot' ? 'Early access' : 'Free') : 'Paused')),
-      node('p', '', `You're using ${account.communities_used} of ${account.community_limit} ${account.community_limit === 1 ? 'community' : 'communities'}.`),
-      add, full ? node('p', '', 'Need more? Contact the MemberOS team.') : null));
-  }
+  if (account) content.append(planCard(context, account, workspace.role === 'owner', () => renderSettings(content, context)));
   const danger = dangerZone(context);
   if (danger) content.append(danger);
 }

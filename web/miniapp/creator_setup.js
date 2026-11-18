@@ -41,7 +41,8 @@ async function renderConnectStep(head, content, workspace, connected, cancel, on
   const account = await api(`/api/v1/creator/workspaces/${id}/saas`).catch(() => null);
   if (account && (account.status !== 'active' || account.communities_used >= account.community_limit)) {
     content.replaceChildren(el('div', 'empty', node('strong', '', account.status !== 'active' ? 'New communities are paused on your account' : "You've reached your community limit"),
-      node('span', '', `You're using ${account.communities_used} of ${account.community_limit}. Contact the MemberOS team to add more.`)));
+      node('span', '', `You're using ${account.communities_used} of ${account.community_limit}. ${account.pro_offer?.available && !account.subscription
+        ? `Upgrade to Pro in Settings for up to ${account.pro_offer.community_limit}.` : 'Contact the MemberOS team to add more.'}`)));
     return;
   }
   const form = node('form', 'form');

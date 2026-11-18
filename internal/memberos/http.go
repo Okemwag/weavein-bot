@@ -19,7 +19,8 @@ type app struct {
 
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /", publicsite.Handler(a.cfg.botUsername, a.cfg.policies))
+	mux.Handle("GET /", publicsite.Handler(publicsite.Site{BotUsername: a.cfg.botUsername, Policies: a.cfg.policies, Operator: a.cfg.operator,
+		Pricing: publicsite.Pricing{ProAvailable: a.cfg.saasEnabled, ProStars: a.cfg.saasProPrice, ProCommunities: a.cfg.saasProLimit, GraceDays: saasGraceDays}}))
 	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/", http.StatusTemporaryRedirect)
 	})
@@ -56,6 +57,11 @@ func (a *app) routes() http.Handler {
 	handle(mux, "POST /api/v1/creator/workspaces/{id}/deletion-request", a.requestWorkspaceDeletion)
 	handle(mux, "GET /api/v1/creator/workspaces/{id}/onboarding", a.onboarding)
 	handle(mux, "GET /api/v1/creator/workspaces/{id}/saas", a.creatorSaaSAccount)
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/saas/checkout", a.saasCheckout)
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/saas/cancel", a.saasRenewal(true))
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/saas/resume", a.saasRenewal(false))
+	handle(mux, "GET /api/v1/admin/saas/payments", a.adminSaaSPayments)
+	handle(mux, "POST /api/v1/admin/saas/payments/{id}/refund", a.adminRefundSaaSPayment)
 	handle(mux, "GET /api/v1/communities/{id}/plans", a.plans)
 	handle(mux, "GET /api/v1/creator/communities/{id}/plans", a.creatorPlans)
 	handle(mux, "POST /api/v1/creator/communities/{id}/plans", a.plans)

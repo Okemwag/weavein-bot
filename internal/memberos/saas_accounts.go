@@ -20,12 +20,13 @@ func (a *app) creatorSaaSAccount(w http.ResponseWriter, r *http.Request) {
 	var limit, used int
 	var managed bool
 	var updated time.Time
+	var proThrough, lapsedAt *time.Time
 	err = a.db.QueryRow(r.Context(), `SELECT sa.workspace_id,sa.plan_code,sa.status,
-		sa.community_limit,sa.managed_billing_allowed,sa.updated_at,
+		sa.community_limit,sa.managed_billing_allowed,sa.updated_at,sa.pro_paid_through,sa.lapsed_at,
 		(SELECT count(*) FROM communities c WHERE c.workspace_id=sa.workspace_id AND c.status<>'archived')
 		FROM saas_accounts sa JOIN workspace_members wm ON wm.workspace_id=sa.workspace_id
 		WHERE sa.workspace_id=$1 AND wm.telegram_user_id=$2`, r.PathValue("id"), user).
-		Scan(&workspace, &plan, &status, &limit, &managed, &updated, &used)
+		Scan(&workspace, &plan, &status, &limit, &managed, &updated, &proThrough, &lapsedAt, &used)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -34,9 +35,24 @@ func (a *app) creatorSaaSAccount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", 500)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"workspace_id": workspace, "plan": plan, "status": status,
+	response := map[string]any{"workspace_id": workspace, "plan": plan, "status": status,
 		"community_limit": limit, "communities_used": used, "managed_billing_allowed": managed,
-		"updated_at": updated, "billing": "No paid MemberOS SaaS billing is configured; pilot grants are operator-managed."})
+		"updated_at": updated, "pro_paid_through": proThrough, "lapsed_at": lapsedAt,
+		"pro_offer": map[string]any{"available": a.cfg.saasEnabled && plan != "pilot", "price_stars": a.cfg.saasProPrice,
+			"community_limit": a.cfg.saasProLimit, "period_days": 30, "grace_days": saasGraceDays}}
+	var subState string
+	var subThrough time.Time
+	var payer int64
+	err = a.db.QueryRow(r.Context(), `SELECT state,paid_through,telegram_user_id FROM saas_subscriptions WHERE workspace_id=$1
+		AND state IN ('active','cancel_scheduled','payment_failed') AND paid_through>now()-make_interval(days => $2)
+		ORDER BY paid_through DESC LIMIT 1`, workspace, saasGraceDays).Scan(&subState, &subThrough, &payer)
+	if err == nil {
+		response["subscription"] = map[string]any{"state": subState, "paid_through": subThrough, "you_paid": payer == user}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		http.Error(w, "database error", 500)
+		return
+	}
+	writeJSON(w, 200, response)
 }
 
 func (a *app) adminSetSaaSAccount(w http.ResponseWriter, r *http.Request) {

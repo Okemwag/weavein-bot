@@ -49,9 +49,15 @@ func ProcessMessage(ctx context.Context, tx pgx.Tx, botID, updateID, seq int64, 
 	}
 	message := wrapper.Message
 	if message.Successful != nil {
+		if IsSaaSPayload(message.Successful.Payload) {
+			return recordSaaSPayment(ctx, tx, botID, updateID, seq, message)
+		}
 		return recordPayment(ctx, tx, botID, updateID, seq, message)
 	}
 	if message.Refunded != nil {
+		if IsSaaSPayload(message.Refunded.Payload) {
+			return recordSaaSRefund(ctx, tx, botID, updateID, message)
+		}
 		return recordRefund(ctx, tx, botID, updateID, seq, message)
 	}
 	return eventing.IgnoredEvent("non-payment message ignored")

@@ -71,6 +71,7 @@ func Run() error {
 	startWorker(a.sendNotifications)
 	startWorker(a.runReminderSchedule)
 	startWorker(a.runOperationsAlerts)
+	startWorker(a.runRetention)
 	// WriteTimeout allows for Stars reconciliation and CSV exports, which walk many pages.
 	server := &http.Server{Addr: cfg.address, Handler: a.routes(), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
@@ -116,7 +117,10 @@ func superviseWorker(ctx context.Context, run func(context.Context)) {
 // migrateOnly applies pending migrations and exits. It needs only DATABASE_URL,
 // so a deploy can run it as a release step before starting the service.
 func migrateOnly() error {
-	url := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if err := secretFileError(); err != nil {
+		return err
+	}
+	url := strings.TrimSpace(secretEnv("DATABASE_URL"))
 	if url == "" {
 		return errors.New("DATABASE_URL is required")
 	}

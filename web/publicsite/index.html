@@ -74,8 +74,26 @@
 
     <section id="pricing" class="section tinted" aria-labelledby="pricing-title">
       <h2 id="pricing-title">Pricing</h2>
+      {{if .Pricing.ProAvailable}}
+      <p class="lead">Start free. Upgrade when you run more than one community. No commission on what your members pay.</p>
+      <div class="plans">
+        <article class="plan">
+          <h3>Free</h3>
+          <p class="plan-price">0 <small>forever</small></p>
+          <ul class="checks"><li>1 community</li><li>Payments, joining and removal handled for you</li><li>Member list, payments and support requests</li></ul>
+        </article>
+        <article class="plan featured">
+          <h3>Pro</h3>
+          <p class="plan-price">{{.Pricing.ProStars}} Stars <small>every 30 days</small></p>
+          <ul class="checks"><li>Up to {{.Pricing.ProCommunities}} communities</li><li>Everything in Free</li><li>Cancel anytime; {{.Pricing.GraceDays}}-day grace if a payment is late</li></ul>
+        </article>
+      </div>
+      <p class="note-dark">Telegram requires payment for digital services in Stars. What you pay in local currency depends on where you buy Stars. If you stop paying, your communities and members are never removed; you just can't add more until you upgrade again.</p>
+      {{if .BotURL}}<a class="button" href="{{.BotURL}}">Start free in Telegram</a>{{else}}<a class="button" href="/app/">Start free</a>{{end}}
+      {{else}}
       <p class="lead">MemberOS is in early access, and our public pricing isn't set yet. Tell us about your community, and we'll agree terms with you before you commit to anything.</p>
       <a class="button" href="#contact">Ask for early access</a>
+      {{end}}
     </section>
 
     <section id="contact" class="section split" aria-labelledby="contact-title">

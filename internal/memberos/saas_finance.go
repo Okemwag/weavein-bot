@@ -32,5 +32,5 @@ func (a *app) adminSaaSFinance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", 500)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"saas_revenue": items, "coverage": "Dedicated MemberOS SaaS ledger only. No paid SaaS provider is connected; empty results are expected."})
+	writeJSON(w, 200, map[string]any{"saas_revenue": items, "coverage": "Dedicated MemberOS SaaS ledger only: MemberOS Pro Stars charges and refunds. Creator community payments are never included."})
 }

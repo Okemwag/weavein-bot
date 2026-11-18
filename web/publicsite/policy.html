@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0f3d35">
+  <title>{{template "title" .}} · MemberOS</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="MemberOS home"><span class="brand-mark" aria-hidden="true">M</span>MemberOS</a>
+    <nav aria-label="Policies"><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a></nav>
+  </header>
+  <main class="section policy">
+    <article>
+      <h1>{{template "title" .}}</h1>
+      <p class="policy-meta">Effective {{.Effective}}. Provided by {{.Operator.LegalName}}{{if .Operator.Address}}, {{.Operator.Address}}{{end}}, {{.Operator.Country}}. Contact: <a href="mailto:{{.Operator.Email}}">{{.Operator.Email}}</a>.</p>
+      {{template "body" .}}
+    </article>
+  </main>
+  <footer class="site-footer">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">M</span>MemberOS</a>
+    <nav aria-label="Footer"><a href="/app/">Open the app</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a></nav>
+    <small>© 2026 {{.Operator.LegalName}}</small>
+  </footer>
+</body>
+</html>

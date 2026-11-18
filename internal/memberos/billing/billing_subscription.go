@@ -24,6 +24,9 @@ func ProcessSubscription(ctx context.Context, tx pgx.Tx, botID, updateID, seq in
 	if change.User.ID <= 0 || (change.State != "canceled" && change.State != "active" && change.State != "failed") {
 		return eventing.InvalidEvent("invalid subscription change")
 	}
+	if IsSaaSPayload(change.Payload) {
+		return processSaaSSubscription(ctx, tx, botID, updateID, seq, change)
+	}
 	var subscriptionID, creatorID string
 	var buyerID, expectedBot int64
 	var until time.Time

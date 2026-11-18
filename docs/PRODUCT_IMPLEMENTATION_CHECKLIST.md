@@ -15,10 +15,10 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 
 - [x] Embedded responsive public MemberOS site at `/`, inspected in desktop and mobile headless Chrome.
 - [x] Homepage explains creator setup, subscriptions, access and operations.
-- [ ] Validated MemberOS SaaS pricing page.
+- [ ] Validated MemberOS SaaS pricing page. Partial: the homepage shows Free and Pro (750 Stars per 30 days, 5 communities) when Pro billing is on; `docs/PRICING.md` records the rationale. Validation with paying creators remains.
 - [x] Interactive subscriber journey walkthrough with a direct Mini App preview link.
 - [x] Configurable Telegram bot entry link opens the Mini App creator registration flow; live BotFather configuration remains open.
-- [ ] Published Terms of Service, Privacy Policy, and Support pages. Partial: `TERMS_URL`, `PRIVACY_URL` and `REFUND_POLICY_URL` are linked from the site footer, the Mini App and `/terms` when set; the documents themselves are not written.
+- [ ] Published Terms of Service, Privacy Policy, and Support pages. Partial: drafted Terms, Privacy and Refund pages are served at `/terms`, `/privacy` and `/refunds` once the operator is named, and linked from the site, the Mini App and `/terms`. Legal review and publication remain.
 - [x] Public creator contact form stores rate-limited inquiries; protected Ops lists and resolves them with an audit entry.
 - [x] Site links to the Mini App and to the configured bot when `TELEGRAM_BOT_USERNAME` is set. Production configuration remains open.
 
@@ -28,7 +28,7 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [x] Editable creator name and support contact in Studio, scoped to the workspace owner and audited.
 - [x] Creator workspace creation through an authenticated API, with owner membership and a migrated workspace for existing creators.
 - [x] Saved creator setup steps now identify the next incomplete action and navigate to its workspace, profile, connection or offer control. Live Telegram onboarding acceptance remains a release gate.
-- [ ] Multiple communities within one workspace, subject to a SaaS plan. Partial: Studio and CLI can attach several verified chats; SaaS limits are absent.
+- [x] Multiple communities within one workspace, subject to a SaaS plan: Free allows one, Pro raises the database-enforced limit, and pilot grants remain.
 - [x] Persisted onboarding progress derived from saved workspaces, communities and active plans; Studio resumes from current server state.
 - [x] Onboarding checklist showing missing workspace, profile, connection, publication and offer steps.
 - [ ] Complete account settings. Partial: profile, timezone, notification toggle and language preference are saved in Studio; interface localization and operational preference enforcement remain.
@@ -179,14 +179,14 @@ The notification worker now handles private-chat bot commands and lifecycle noti
 
 ## P0 — MemberOS's own SaaS subscriptions
 
-- [ ] Define and validate commercial plans.
-- [ ] Free/trial and paid SaaS entitlements.
-- [ ] Creator SaaS subscription status and enforcement.
+- [ ] Define and validate commercial plans. Partial: Free and Pro are defined and configurable (`docs/PRICING.md`); validation with creators remains.
+- [x] Free and paid SaaS entitlements: the Free plan acts as the trial; Pro raises the community allowance while paid and through a 7-day grace period.
+- [x] Creator SaaS subscription status and enforcement: Pro payments, renewals, cancellations, failures and refunds update the account; the lifecycle worker returns lapsed accounts to Free limits and notifies owners.
 - [x] Free and operator-granted pilot accounts enforce connected-community limits in PostgreSQL; managed-billing eligibility and account suspension gate new setup and checkout.
-- [ ] Creator billing and plan-management screen.
-- [ ] Supported SaaS billing integration and settlement contract.
-- [ ] SaaS payment-failure handling that preserves creator data.
-- [ ] Policy and workflow for a creator who stops paying MemberOS.
+- [x] Creator billing and plan-management screen in Settings: plan, usage, Upgrade, and cancel or resume renewal.
+- [ ] Supported SaaS billing integration and settlement contract. Partial: Pro is a Telegram Star subscription to the MemberOS bot, recorded in `saas_payments` and `saas_financial_events`; Stars withdrawal and live payment remain unverified.
+- [x] SaaS payment-failure handling that preserves creator data: failed or missing renewals keep Pro for 7 days, then block only new communities; nothing is archived or deleted.
+- [x] Policy and workflow for a creator who stops paying MemberOS, stated in the Terms and `docs/PRICING.md` and enforced by `runSaaSLifecycle`.
 
 The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not configured prices.
 
@@ -222,23 +222,23 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 - [x] Use numeric Telegram IDs in primary membership and billing decisions.
 - [ ] Authorization on every workspace operation with full roles. Current creator reads check `creator_users`; creator mutation APIs and broad roles do not exist.
 - [ ] Role-based access control beyond the owner/admin rows.
-- [ ] Managed secret storage and rotation for bot tokens. Current token comes from an environment variable.
+- [ ] Managed secret storage and rotation for bot tokens. Partial: every secret can be read from a mounted file (`*_FILE`) and rotated by replacing it and restarting; no secrets manager integration or zero-downtime rotation exists.
 - [x] Keep bot tokens out of browser API responses and Mini App assets.
 - [ ] Verified TLS deployment and at-rest protection policy. The service registers HTTPS webhooks, but no deployed environment is configured here.
 - [x] Verify Telegram webhook secret header before ingesting updates.
 - [x] Enforce unique update and charge IDs; PostgreSQL test covers a duplicate charge.
 - [x] In-process bounded rate limiting covers public catalog, sessions, checkouts and support requests; distributed limits remain a deployment consideration.
-- [ ] Personal-data retention and deletion policy, plus enforcement jobs.
+- [x] Personal-data retention policy in the Privacy Policy, enforced by a six-hourly job for webhook payloads, bot message text, resolved tickets, website enquiries and unlinked profiles. Workspace deletion remains operator-reviewed.
 - [ ] Backup schedule and tested restore. Partial: on 2026-11-18 a backup of a fully migrated database restored into an empty database with matching tables, functions and migrations, and both refusal guards worked; no production schedule or offsite copy exists.
-- [ ] Legally reviewed Terms and Privacy Policy.
-- [ ] Published dispute and refund policy.
+- [ ] Legally reviewed Terms and Privacy Policy. Drafts exist in `web/publicsite`; legal review has not happened.
+- [ ] Published dispute and refund policy. Partial: the Refund Policy draft covers community memberships, Pro and Telegram disputes; legal review and publication remain.
 - [ ] Kenyan and international data-protection assessment.
 - [x] `docs/SECURITY_INCIDENT_RESPONSE.md` defines detection, containment, evidence preservation, recovery, communication and closure steps. Operator rehearsal remains a release gate.
 
 ## P0 — Backend infrastructure and reliability
 
 - [x] Modular Go executable with separate identity, Telegram, lifecycle, and Mini App packages.
-- [x] Ordered PostgreSQL migrations from 001_initial through 025_operations_resolution; `memberos migrate` applies them without starting the service.
+- [x] Ordered PostgreSQL migrations from 001_initial through 026_saas_billing; `memberos migrate` applies them without starting the service.
 - [ ] Full tenant-aware data model and repository boundary. Partial: explicit workspaces, plan ownership constraints, and tenant API tests exist; repository boundaries and comprehensive cross-tenant tests remain.
 - [x] Durable Telegram webhook inbox before acknowledgement.
 - [x] Reject invalid webhook secrets and deduplicate `(bot_id, update_id)`.

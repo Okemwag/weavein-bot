@@ -19,6 +19,9 @@ func (a *app) runOperationsAlerts(ctx context.Context) {
 		if err := a.queueOperationsAlerts(ctx); err != nil {
 			slog.Error("operations alert check failed", "error", err)
 		}
+		if err := a.runSaaSLifecycle(ctx); err != nil {
+			slog.Error("MemberOS Pro lifecycle check failed", "error", err)
+		}
 		select {
 		case <-ctx.Done():
 			return
