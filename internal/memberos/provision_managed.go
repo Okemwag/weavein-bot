@@ -41,8 +41,8 @@ func (a *app) provisionManaged(ctx context.Context) error {
 	var existingID, mode, state string
 	var existingPrice int
 	err = a.db.QueryRow(ctx, `SELECT c.id,c.billing_mode,c.status,c.price_stars FROM communities c
-        JOIN creator_users cu ON cu.creator_id=c.creator_id AND cu.role='owner'
-        WHERE c.telegram_chat_id=$1 AND cu.telegram_user_id=$2`, chatID, ownerID).Scan(&existingID, &mode, &state, &existingPrice)
+        JOIN workspace_members wm ON wm.workspace_id=c.workspace_id AND wm.role='owner'
+        WHERE c.telegram_chat_id=$1 AND wm.telegram_user_id=$2`, chatID, ownerID).Scan(&existingID, &mode, &state, &existingPrice)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}

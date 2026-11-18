@@ -22,7 +22,7 @@ func (a *app) adminUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := a.db.Query(r.Context(), `SELECT bot_id,update_id,update_type,state,attempts,last_error,received_at
-        FROM telegram_updates WHERE state IN ('failed','quarantined') ORDER BY received_at DESC LIMIT 100`)
+		FROM telegram_updates WHERE state IN ('failed','quarantined','answer_unknown') ORDER BY received_at DESC LIMIT 100`)
 	if err != nil {
 		http.Error(w, "database error", 500)
 		return
@@ -103,7 +103,7 @@ func (a *app) adminRetryUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,update_id,details)
-        VALUES($1,'webhook_retry',$2,jsonb_build_object('bot_id',$3,'kind',$4))`, id, updateID, botID, kind)
+        VALUES($1,'webhook_retry',$2,jsonb_build_object('bot_id',$3::bigint,'kind',$4::text))`, id, updateID, botID, kind)
 	if err != nil || tx.Commit(r.Context()) != nil {
 		http.Error(w, "database error", 500)
 		return
@@ -156,7 +156,7 @@ func (a *app) adminRetryAccessJob(w http.ResponseWriter, r *http.Request) {
 	var community string
 	var user int64
 	err = tx.QueryRow(r.Context(), `UPDATE access_jobs SET status='pending',attempts=0,last_error=NULL,finished_at=NULL,run_after=now()
-        WHERE id::text=$1 AND status='failed' RETURNING community_id,telegram_user_id`, r.PathValue("id")).Scan(&community, &user)
+        WHERE id=$1 AND status='failed' RETURNING community_id,telegram_user_id`, r.PathValue("id")).Scan(&community, &user)
 	if err == pgx.ErrNoRows {
 		http.NotFound(w, r)
 		return
@@ -166,7 +166,7 @@ func (a *app) adminRetryAccessJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
-        VALUES($1,'access_job_retry',jsonb_build_object('job_id',$2,'community_id',$3,'member_id',$4))`, id, r.PathValue("id"), community, user)
+        VALUES($1,'access_job_retry',jsonb_build_object('job_id',$2::uuid,'community_id',$3::uuid,'member_id',$4::bigint))`, id, r.PathValue("id"), community, user)
 	if err != nil || tx.Commit(r.Context()) != nil {
 		http.Error(w, "database error", 500)
 		return

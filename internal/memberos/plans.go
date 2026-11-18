@@ -16,7 +16,7 @@ func (a *app) plans(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		rows, err := a.db.Query(r.Context(), `SELECT p.id,p.name,p.status,v.id,v.version,v.price_stars,v.description,v.benefits,v.terms
 			FROM plans p JOIN LATERAL (SELECT * FROM plan_versions WHERE plan_id=p.id ORDER BY version DESC LIMIT 1) v ON true
-			JOIN communities c ON c.id=p.community_id WHERE c.id::text=$1 AND c.status='published' AND p.status='active'
+			JOIN communities c ON c.id=p.community_id WHERE c.id=$1 AND c.status='published' AND p.status='active'
 			ORDER BY p.created_at`, communityID)
 		if err != nil {
 			http.Error(w, "database error", 500)
@@ -66,7 +66,7 @@ func (a *app) plans(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = tx.Rollback(r.Context()) }()
 	var workspaceID string
 	err = tx.QueryRow(r.Context(), `SELECT c.workspace_id FROM communities c JOIN workspace_members wm ON wm.workspace_id=c.workspace_id
-		WHERE c.id::text=$1 AND wm.telegram_user_id=$2 AND wm.role IN ('owner','admin') AND c.billing_mode='managed_bot'`, communityID, userID).Scan(&workspaceID)
+		WHERE c.id=$1 AND wm.telegram_user_id=$2 AND wm.role IN ('owner','admin') AND c.billing_mode='managed_bot'`, communityID, userID).Scan(&workspaceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -116,7 +116,7 @@ func (a *app) revisePlan(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(r.Context(), `SELECT p.id FROM plans p
 		JOIN workspace_members wm ON wm.workspace_id=p.workspace_id AND wm.telegram_user_id=$2
 		JOIN communities c ON c.id=p.community_id
-		WHERE p.id::text=$1 AND wm.role IN ('owner','admin') AND p.status<>'archived' AND c.billing_mode='managed_bot'
+		WHERE p.id=$1 AND wm.role IN ('owner','admin') AND p.status<>'archived' AND c.billing_mode='managed_bot'
 		FOR UPDATE OF p`, r.PathValue("id"), userID).Scan(&planID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
@@ -167,7 +167,7 @@ func (a *app) setPlanStatus(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(r.Context(), `UPDATE plans p SET status=$3 FROM workspaces ws
 		JOIN workspace_members wm ON wm.workspace_id=ws.id AND wm.telegram_user_id=$2
 		JOIN communities c ON c.workspace_id=ws.id AND c.billing_mode='managed_bot'
-		WHERE p.id::text=$1 AND p.workspace_id=ws.id AND p.community_id=c.id AND wm.role IN ('owner','admin') AND p.status<>'archived'
+		WHERE p.id=$1 AND p.workspace_id=ws.id AND p.community_id=c.id AND wm.role IN ('owner','admin') AND p.status<>'archived'
 		RETURNING p.id,(SELECT creator_id FROM workspaces WHERE id=p.workspace_id)`, r.PathValue("id"), userID, body.Status).Scan(&planID, &creatorID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
@@ -201,7 +201,7 @@ func (a *app) creatorPlans(w http.ResponseWriter, r *http.Request) {
 	communityID := r.PathValue("id")
 	var mode string
 	err = a.db.QueryRow(r.Context(), `SELECT c.billing_mode FROM communities c JOIN workspace_members wm ON wm.workspace_id=c.workspace_id
-		WHERE c.id::text=$1 AND wm.telegram_user_id=$2 AND wm.role IN ('owner','admin')`, communityID, userID).Scan(&mode)
+		WHERE c.id=$1 AND wm.telegram_user_id=$2 AND wm.role IN ('owner','admin')`, communityID, userID).Scan(&mode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -212,7 +212,7 @@ func (a *app) creatorPlans(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := a.db.Query(r.Context(), `SELECT p.id,p.name,p.status,v.id,v.version,v.price_stars,v.description,v.benefits,v.terms
 		FROM plans p JOIN LATERAL (SELECT * FROM plan_versions WHERE plan_id=p.id ORDER BY version DESC LIMIT 1) v ON true
-		WHERE p.community_id::text=$1 ORDER BY p.created_at,p.id`, communityID)
+		WHERE p.community_id=$1 ORDER BY p.created_at,p.id`, communityID)
 	if err != nil {
 		http.Error(w, "database error", 500)
 		return

@@ -39,8 +39,8 @@ func (s Service) ExpireOverrides(ctx context.Context) error {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO audit_events(creator_id,subject_telegram_user_id,action,details)
-            SELECT creator_id,$2,'access_override_expired',jsonb_build_object('override_id',$3,'community_id',$1)
-            FROM communities WHERE id=$1`, item.community, item.user, item.id); err != nil {
+            SELECT creator_id,$2::bigint,'access_override_expired',jsonb_build_object('override_id',$3::uuid,'community_id',$1::uuid)
+            FROM communities WHERE id=$1::uuid`, item.community, item.user, item.id); err != nil {
 			return err
 		}
 	}

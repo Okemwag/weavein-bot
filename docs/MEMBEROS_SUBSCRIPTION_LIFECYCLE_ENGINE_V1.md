@@ -83,7 +83,7 @@ Use HTTPS webhooks and set `allowed_updates` explicitly. Telegram retries failed
 | active | `subscription=canceled` | `cancel_scheduled` | Set auto-renew off; keep access through paid-through |
 | cancel_scheduled | `subscription=active` | `active` | Set auto-renew on; do not extend time |
 | active/cancel_scheduled | `subscription=failed` | `payment_failed` | Keep existing paid-through; recovery notice if permitted |
-| payment_failed | Paid-through passes | `grace_period` or `expired` | Default v1: no grace; optional configured grace must be shown as promotional access, not paid time |
+| payment_failed | Paid-through passes | `grace_period` or `expired` | No grace: a failed renewal gets none. Only a renewal that is still on and has no reported outcome keeps access for 24 hours, so a late charge or a webhook outage cannot remove a member |
 | any | Refund of covering payment | `refunded` or prior valid state | Recompute all covering entitlements; reconcile access |
 | expired/refunded | New verified payment | `reactivated`, then `active` | New entitlement and re-admission after unban if needed |
 | active/cancel_scheduled/payment_failed | Paid-through passes with no other valid coverage | `expired` | Queue removal in managed mode only |

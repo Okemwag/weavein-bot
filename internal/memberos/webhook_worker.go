@@ -19,6 +19,11 @@ func (a *app) processUpdates(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if _, err := a.db.Exec(ctx, `UPDATE telegram_updates SET state='answer_unknown',
+				last_error='pre-checkout answer interrupted; inspect payment before any manual action',processed_at=now()
+				WHERE state='answering' AND received_at<now()-interval '15 seconds'`); err != nil {
+				slog.Error("pre-checkout recovery failed", "error", err)
+			}
 			for i := 0; i < 20; i++ {
 				more, err := a.processOne(ctx)
 				if err != nil {
@@ -39,11 +44,12 @@ func (a *app) processOne(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var botID, updateID int64
+	var botID, updateID, seq int64
 	var kind string
 	var raw []byte
-	err = tx.QueryRow(ctx, `SELECT bot_id,update_id,update_type,payload FROM telegram_updates
-        WHERE state='pending' AND run_after<=now() ORDER BY received_at,update_id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&botID, &updateID, &kind, &raw)
+	var receivedAt time.Time
+	err = tx.QueryRow(ctx, `SELECT bot_id,update_id,seq,update_type,payload,received_at FROM telegram_updates
+        WHERE state='pending' AND run_after<=now() ORDER BY run_after,seq LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&botID, &updateID, &seq, &kind, &raw, &receivedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -60,22 +66,30 @@ func (a *app) processOne(ctx context.Context) (bool, error) {
 	case "chat_member":
 		processingErr = a.processChatMember(ctx, work, updateID, raw)
 	case "message":
-		processingErr = billing.ProcessMessage(ctx, work, botID, updateID, raw)
+		processingErr = billing.ProcessMessage(ctx, work, botID, updateID, seq, raw)
 	case "command":
 		processingErr = a.processCommand(ctx, work, botID, updateID, raw)
+	case "contact":
+		processingErr = a.processContact(ctx, work, botID, raw)
+	case "chat_shared":
+		processingErr = a.processChatShared(ctx, work, raw)
 	case "subscription":
-		processingErr = billing.ProcessSubscription(ctx, work, botID, updateID, raw)
+		processingErr = billing.ProcessSubscription(ctx, work, botID, updateID, seq, raw)
 	case "chat_join_request":
 		processingErr = a.processJoinRequest(ctx, work, updateID, raw)
 	default:
-		processingErr = eventing.InvalidEvent("unsupported Telegram update")
+		processingErr = eventing.IgnoredEvent("unsupported Telegram update")
 	}
 	if processingErr != nil {
 		if err := work.Rollback(ctx); err != nil {
 			return false, err
 		}
 		var invalid eventing.InvalidEvent
-		if errors.As(processingErr, &invalid) {
+		var ignored eventing.IgnoredEvent
+		var dependency eventing.DependencyPending
+		if errors.As(processingErr, &ignored) {
+			state, reason = "ignored", string(ignored)
+		} else if errors.As(processingErr, &invalid) {
 			state, reason = "quarantined", string(invalid)
 		} else {
 			var attempts int
@@ -83,12 +97,21 @@ func (a *app) processOne(ctx context.Context) (bool, error) {
 				return false, err
 			}
 			state, reason = "pending", processingErr.Error()
-			if attempts+1 >= 5 {
+			delay := 1 << min(attempts+1, 6)
+			if errors.As(processingErr, &dependency) {
+				delay = 30 * (1 << min(attempts, 7))
+				if delay > 3600 {
+					delay = 3600
+				}
+				if time.Since(receivedAt) >= 24*time.Hour {
+					state = "failed"
+				}
+			} else if attempts+1 >= 5 {
 				state = "failed"
 			}
 			_, err = tx.Exec(ctx, `UPDATE telegram_updates SET state=$3,last_error=$4,attempts=attempts+1,
                 run_after=now()+make_interval(secs => $5::int),processed_at=CASE WHEN $3='failed' THEN now() ELSE NULL END
-                WHERE bot_id=$1 AND update_id=$2`, botID, updateID, state, reason, 1<<min(attempts+1, 6))
+                WHERE bot_id=$1 AND update_id=$2`, botID, updateID, state, reason, delay)
 			if err != nil {
 				return false, err
 			}

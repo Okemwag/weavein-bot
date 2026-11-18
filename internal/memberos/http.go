@@ -6,6 +6,7 @@ import (
 	"memberos/web/miniapp"
 	"memberos/web/publicsite"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,7 +19,8 @@ type app struct {
 
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /", publicsite.Handler(a.cfg.botUsername))
+	mux.Handle("GET /", publicsite.Handler(publicsite.Site{BotUsername: a.cfg.botUsername, Policies: a.cfg.policies, Operator: a.cfg.operator,
+		Pricing: publicsite.Pricing{ProAvailable: a.cfg.saasEnabled, ProStars: a.cfg.saasProPrice, ProCommunities: a.cfg.saasProLimit, GraceDays: saasGraceDays}}))
 	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/", http.StatusTemporaryRedirect)
 	})
@@ -33,74 +35,127 @@ func (a *app) routes() http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	mux.HandleFunc("POST /api/v1/telegram/session", a.session)
-	mux.HandleFunc("POST /api/v1/creator-inquiries", a.submitCreatorInquiry)
-	mux.HandleFunc("GET /api/v1/communities/{id}", a.community)
-	mux.HandleFunc("GET /api/v1/communities", a.listCommunities)
-	mux.HandleFunc("GET /api/v1/me/membership", a.membership)
-	mux.HandleFunc("GET /api/v1/me/memberships", a.myMemberships)
-	mux.HandleFunc("POST /api/v1/me/subscriptions/{id}/cancel", a.cancelSubscription)
-	mux.HandleFunc("GET /api/v1/creator/communities", a.creatorCommunities)
-	mux.HandleFunc("POST /api/v1/creator/workspaces/{id}/communities", a.connectCommunity)
-	mux.HandleFunc("POST /api/v1/creator/communities/{id}/recheck", a.recheckCommunity)
-	mux.HandleFunc("PATCH /api/v1/creator/communities/{id}/onboarding", a.updateCommunityOnboarding)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/onboarding", a.creatorCommunityOnboarding)
-	mux.HandleFunc("POST /api/v1/creator/communities/{id}/disconnect", a.disconnectCommunity)
-	mux.HandleFunc("GET /api/v1/creator/workspaces", a.workspaces)
-	mux.HandleFunc("POST /api/v1/creator/workspaces", a.workspaces)
-	mux.HandleFunc("PATCH /api/v1/creator/workspaces/{id}", a.updateWorkspace)
-	mux.HandleFunc("PATCH /api/v1/creator/workspaces/{id}/settings", a.updateWorkspaceSettings)
-	mux.HandleFunc("POST /api/v1/creator/workspaces/{id}/deletion-request", a.requestWorkspaceDeletion)
-	mux.HandleFunc("GET /api/v1/creator/workspaces/{id}/onboarding", a.onboarding)
-	mux.HandleFunc("GET /api/v1/creator/workspaces/{id}/saas", a.creatorSaaSAccount)
-	mux.HandleFunc("GET /api/v1/communities/{id}/plans", a.plans)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/plans", a.creatorPlans)
-	mux.HandleFunc("POST /api/v1/creator/communities/{id}/plans", a.plans)
-	mux.HandleFunc("POST /api/v1/creator/plans/{id}/versions", a.revisePlan)
-	mux.HandleFunc("PATCH /api/v1/creator/plans/{id}", a.setPlanStatus)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/overview", a.overview)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/members", a.creatorMembers)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/members.csv", a.creatorMembersCSV)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/members/{user_id}", a.creatorMemberProfile)
-	mux.HandleFunc("POST /api/v1/creator/communities/{id}/members/{user_id}/notes", a.creatorMemberNote)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/access-overrides", a.creatorAccessOverrides)
-	mux.HandleFunc("POST /api/v1/creator/communities/{id}/access-overrides", a.creatorGrantOverride)
-	mux.HandleFunc("POST /api/v1/creator/communities/{id}/access-overrides/{override_id}/revoke", a.creatorRevokeOverride)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/access-mismatches", a.creatorAccessMismatches)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/payments", a.creatorPayments)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/payments.csv", a.creatorPaymentsCSV)
-	mux.HandleFunc("GET /api/v1/creator/communities/{id}/support-tickets", a.creatorSupportTickets)
-	mux.HandleFunc("POST /api/v1/creator/communities/{id}/support-tickets/{ticket_id}/resolve", a.creatorResolveTicket)
-	mux.HandleFunc("POST /api/v1/me/support-tickets", a.createSupportTicket)
-	mux.HandleFunc("POST /api/v1/me/refund-requests", a.createRefundRequest)
-	mux.HandleFunc("GET /api/v1/me/payments", a.myPayments)
-	mux.HandleFunc("GET /api/v1/me/checkout-status", a.myCheckoutStatus)
-	mux.HandleFunc("GET /api/v1/me/notification-preferences", a.notificationPreferences)
-	mux.HandleFunc("PATCH /api/v1/me/notification-preferences", a.notificationPreferences)
-	mux.HandleFunc("GET /api/v1/admin/updates", a.adminUpdates)
-	mux.HandleFunc("POST /api/v1/admin/updates/{bot_id}/{update_id}/retry", a.adminRetryUpdate)
-	mux.HandleFunc("GET /api/v1/admin/access-jobs", a.adminAccessJobs)
-	mux.HandleFunc("POST /api/v1/admin/access-jobs/{id}/retry", a.adminRetryAccessJob)
-	mux.HandleFunc("POST /api/v1/admin/reconcile-access", a.adminReconcileAccess)
-	mux.HandleFunc("POST /api/v1/admin/reconcile-stars", a.adminReconcileStars)
-	mux.HandleFunc("GET /api/v1/admin/star-discrepancies", a.adminStarDiscrepancies)
-	mux.HandleFunc("GET /api/v1/admin/refund-requests", a.adminRefundRequests)
-	mux.HandleFunc("POST /api/v1/admin/refund-requests/{id}/approve", a.adminApproveRefund)
-	mux.HandleFunc("GET /api/v1/admin/creators", a.adminCreators)
-	mux.HandleFunc("GET /api/v1/admin/incidents", a.adminIncidents)
-	mux.HandleFunc("GET /api/v1/admin/health", a.adminHealth)
-	mux.HandleFunc("GET /api/v1/admin/audit", a.adminAudit)
-	mux.HandleFunc("GET /api/v1/admin/support-tickets", a.adminSupportTickets)
-	mux.HandleFunc("GET /api/v1/admin/creator-inquiries", a.adminCreatorInquiries)
-	mux.HandleFunc("POST /api/v1/admin/creator-inquiries/{id}/resolve", a.adminResolveCreatorInquiry)
-	mux.HandleFunc("PATCH /api/v1/admin/workspaces/{id}/saas", a.adminSetSaaSAccount)
-	mux.HandleFunc("GET /api/v1/admin/saas-finance", a.adminSaaSFinance)
-	mux.HandleFunc("POST /api/v1/admin/support-tickets/{id}/resolve", a.adminResolveSupportTicket)
-	mux.HandleFunc("POST /api/v1/admin/support-tickets/{id}/escalate", a.adminEscalateSupportTicket)
-	mux.HandleFunc("GET /api/v1/admin/support-tickets/{id}/evidence", a.adminDisputeEvidence)
-	mux.HandleFunc("POST /api/v1/telegram/webhooks/{bot_id}", a.webhook)
-	mux.HandleFunc("POST /api/v1/checkouts", a.checkout)
+	handle(mux, "POST /api/v1/telegram/session", a.session)
+	handle(mux, "POST /api/v1/creator-inquiries", a.submitCreatorInquiry)
+	handle(mux, "GET /api/v1/communities/{id}", a.community)
+	handle(mux, "GET /api/v1/communities", a.listCommunities)
+	handle(mux, "GET /api/v1/me/membership", a.membership)
+	handle(mux, "GET /api/v1/me/memberships", a.myMemberships)
+	handle(mux, "POST /api/v1/me/subscriptions/{id}/cancel", a.cancelSubscription)
+	handle(mux, "GET /api/v1/creator/communities", a.creatorCommunities)
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/chat-selection", a.prepareChatSelection)
+	handle(mux, "GET /api/v1/creator/workspaces/{id}/chat-selection", a.selectedChat)
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/communities", a.connectCommunity)
+	handle(mux, "POST /api/v1/creator/communities/{id}/recheck", a.recheckCommunity)
+	handle(mux, "PATCH /api/v1/creator/communities/{id}/onboarding", a.updateCommunityOnboarding)
+	handle(mux, "GET /api/v1/creator/communities/{id}/onboarding", a.creatorCommunityOnboarding)
+	handle(mux, "POST /api/v1/creator/communities/{id}/disconnect", a.disconnectCommunity)
+	handle(mux, "GET /api/v1/creator/workspaces", a.workspaces)
+	handle(mux, "POST /api/v1/creator/workspaces", a.workspaces)
+	handle(mux, "PATCH /api/v1/creator/workspaces/{id}", a.updateWorkspace)
+	handle(mux, "PATCH /api/v1/creator/workspaces/{id}/settings", a.updateWorkspaceSettings)
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/deletion-request", a.requestWorkspaceDeletion)
+	handle(mux, "GET /api/v1/creator/workspaces/{id}/onboarding", a.onboarding)
+	handle(mux, "GET /api/v1/creator/workspaces/{id}/saas", a.creatorSaaSAccount)
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/saas/checkout", a.saasCheckout)
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/saas/cancel", a.saasRenewal(true))
+	handle(mux, "POST /api/v1/creator/workspaces/{id}/saas/resume", a.saasRenewal(false))
+	handle(mux, "GET /api/v1/admin/saas/payments", a.adminSaaSPayments)
+	handle(mux, "POST /api/v1/admin/saas/payments/{id}/refund", a.adminRefundSaaSPayment)
+	handle(mux, "GET /api/v1/communities/{id}/plans", a.plans)
+	handle(mux, "GET /api/v1/creator/communities/{id}/plans", a.creatorPlans)
+	handle(mux, "POST /api/v1/creator/communities/{id}/plans", a.plans)
+	handle(mux, "POST /api/v1/creator/plans/{id}/versions", a.revisePlan)
+	handle(mux, "PATCH /api/v1/creator/plans/{id}", a.setPlanStatus)
+	handle(mux, "GET /api/v1/creator/communities/{id}/overview", a.overview)
+	handle(mux, "GET /api/v1/creator/communities/{id}/members", a.creatorMembers)
+	handle(mux, "GET /api/v1/creator/communities/{id}/members.csv", a.creatorMembersCSV)
+	handle(mux, "GET /api/v1/creator/communities/{id}/members/{user_id}", a.creatorMemberProfile)
+	handle(mux, "POST /api/v1/creator/communities/{id}/members/{user_id}/notes", a.creatorMemberNote)
+	handle(mux, "GET /api/v1/creator/communities/{id}/access-overrides", a.creatorAccessOverrides)
+	handle(mux, "POST /api/v1/creator/communities/{id}/access-overrides", a.creatorGrantOverride)
+	handle(mux, "POST /api/v1/creator/communities/{id}/access-overrides/{override_id}/revoke", a.creatorRevokeOverride)
+	handle(mux, "GET /api/v1/creator/communities/{id}/access-mismatches", a.creatorAccessMismatches)
+	handle(mux, "GET /api/v1/creator/communities/{id}/payments", a.creatorPayments)
+	handle(mux, "GET /api/v1/creator/communities/{id}/payments.csv", a.creatorPaymentsCSV)
+	handle(mux, "GET /api/v1/creator/communities/{id}/support-tickets", a.creatorSupportTickets)
+	handle(mux, "POST /api/v1/creator/communities/{id}/support-tickets/{ticket_id}/resolve", a.creatorResolveTicket)
+	handle(mux, "POST /api/v1/me/support-tickets", a.createSupportTicket)
+	handle(mux, "POST /api/v1/me/refund-requests", a.createRefundRequest)
+	handle(mux, "GET /api/v1/me/payments", a.myPayments)
+	handle(mux, "GET /api/v1/me/checkout-status", a.myCheckoutStatus)
+	handle(mux, "GET /api/v1/me/notification-preferences", a.notificationPreferences)
+	handle(mux, "PATCH /api/v1/me/notification-preferences", a.notificationPreferences)
+	handle(mux, "GET /api/v1/admin/updates", a.adminUpdates)
+	handle(mux, "POST /api/v1/admin/updates/{bot_id}/{update_id}/retry", a.adminRetryUpdate)
+	handle(mux, "GET /api/v1/admin/access-jobs", a.adminAccessJobs)
+	handle(mux, "POST /api/v1/admin/access-jobs/{id}/retry", a.adminRetryAccessJob)
+	handle(mux, "GET /api/v1/admin/notifications", a.adminNotifications)
+	handle(mux, "POST /api/v1/admin/notifications/{id}/retry", a.adminRetryNotification)
+	handle(mux, "POST /api/v1/admin/updates/{bot_id}/{update_id}/acknowledge", a.adminAcknowledgeUpdate)
+	handle(mux, "POST /api/v1/admin/access-jobs/{id}/acknowledge", a.adminAcknowledgeAccessJob)
+	handle(mux, "POST /api/v1/admin/notifications/retry-uncertain", a.adminRetryUncertainNotifications)
+	handle(mux, "POST /api/v1/admin/notifications/{id}/acknowledge", a.adminAcknowledgeNotification)
+	handle(mux, "POST /api/v1/admin/refund-requests/{id}/reject", a.adminRejectRefund)
+	handle(mux, "POST /api/v1/admin/refund-requests/{id}/reopen", a.adminReopenRefund)
+	handle(mux, "POST /api/v1/admin/reconcile-access", a.adminReconcileAccess)
+	handle(mux, "POST /api/v1/admin/reconcile-stars", a.adminReconcileStars)
+	handle(mux, "GET /api/v1/admin/star-discrepancies", a.adminStarDiscrepancies)
+	handle(mux, "GET /api/v1/admin/refund-requests", a.adminRefundRequests)
+	handle(mux, "POST /api/v1/admin/refund-requests/{id}/approve", a.adminApproveRefund)
+	handle(mux, "GET /api/v1/admin/creators", a.adminCreators)
+	handle(mux, "GET /api/v1/admin/incidents", a.adminIncidents)
+	handle(mux, "GET /api/v1/admin/health", a.adminHealth)
+	handle(mux, "GET /api/v1/admin/audit", a.adminAudit)
+	handle(mux, "GET /api/v1/admin/support-tickets", a.adminSupportTickets)
+	handle(mux, "GET /api/v1/admin/creator-inquiries", a.adminCreatorInquiries)
+	handle(mux, "POST /api/v1/admin/creator-inquiries/{id}/resolve", a.adminResolveCreatorInquiry)
+	handle(mux, "PATCH /api/v1/admin/workspaces/{id}/saas", a.adminSetSaaSAccount)
+	handle(mux, "GET /api/v1/admin/saas-finance", a.adminSaaSFinance)
+	handle(mux, "POST /api/v1/admin/support-tickets/{id}/resolve", a.adminResolveSupportTicket)
+	handle(mux, "POST /api/v1/admin/support-tickets/{id}/escalate", a.adminEscalateSupportTicket)
+	handle(mux, "GET /api/v1/admin/support-tickets/{id}/evidence", a.adminDisputeEvidence)
+	handle(mux, "POST /api/v1/telegram/webhooks/{bot_id}", a.webhook)
+	handle(mux, "POST /api/v1/checkouts", a.checkout)
 	return a.withHTTPMiddleware(mux)
+}
+
+// handle registers a route and rejects malformed UUID path values with 404, so
+// handlers can compare them directly against indexed uuid columns.
+func handle(mux *http.ServeMux, pattern string, handler http.HandlerFunc) {
+	var ids []string
+	for _, name := range []string{"id", "override_id", "ticket_id"} {
+		if strings.Contains(pattern, "{"+name+"}") {
+			ids = append(ids, name)
+		}
+	}
+	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		for _, name := range ids {
+			if !validUUID(r.PathValue(name)) {
+				http.NotFound(w, r)
+				return
+			}
+		}
+		handler(w, r)
+	})
+}
+
+// validUUID accepts the canonical 8-4-4-4-12 form that Postgres returns.
+func validUUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for i, c := range value {
+		switch {
+		case i == 8 || i == 13 || i == 18 || i == 23:
+			if c != '-' {
+				return false
+			}
+		case (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F'):
+			return false
+		}
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

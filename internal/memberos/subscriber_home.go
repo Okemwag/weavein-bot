@@ -16,10 +16,9 @@ func (a *app) myMemberships(w http.ResponseWriter, r *http.Request) {
             UNION SELECT community_id FROM access_observations WHERE telegram_user_id=$1
 		) SELECT c.id,c.title,c.billing_mode,c.status,s.state,s.paid_through,s.auto_renew_state,
             ao.member_status,ao.observed_at,
-            (EXISTS(SELECT 1 FROM entitlements e WHERE e.community_id=c.id AND e.telegram_user_id=$1
-                AND e.status='active' AND e.valid_until>now())
-             OR EXISTS(SELECT 1 FROM access_overrides o WHERE o.community_id=c.id AND o.telegram_user_id=$1
-                AND o.active=true AND o.valid_until>now()))
+            member_has_access(c.id,$1),
+            (SELECT count(*) FROM subscriptions l WHERE l.community_id=c.id AND l.telegram_user_id=$1
+                AND l.state NOT IN ('expired','refunded') AND l.auto_renew_state='on')
         FROM known k JOIN communities c ON c.id=k.community_id
         LEFT JOIN LATERAL (SELECT state,paid_through,auto_renew_state FROM subscriptions
             WHERE community_id=c.id AND telegram_user_id=$1 ORDER BY last_payment_at DESC LIMIT 1) s ON true
@@ -36,7 +35,8 @@ func (a *app) myMemberships(w http.ResponseWriter, r *http.Request) {
 		var state, renew, access *string
 		var until, observed *time.Time
 		var entitled bool
-		if rows.Scan(&id, &title, &mode, &communityStatus, &state, &until, &renew, &access, &observed, &entitled) != nil {
+		var renewing int
+		if rows.Scan(&id, &title, &mode, &communityStatus, &state, &until, &renew, &access, &observed, &entitled, &renewing) != nil {
 			http.Error(w, "database error", 500)
 			return
 		}
@@ -46,6 +46,7 @@ func (a *app) myMemberships(w http.ResponseWriter, r *http.Request) {
 			item["paid_through"] = until
 			item["auto_renew_state"] = renew
 			item["entitled"] = entitled
+			item["renewing_subscriptions"] = renewing
 		}
 		items = append(items, item)
 	}

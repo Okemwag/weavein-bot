@@ -99,7 +99,7 @@ func (a *app) adminResolveCreatorInquiry(w http.ResponseWriter, r *http.Request)
 	defer func() { _ = tx.Rollback(r.Context()) }()
 	var id string
 	err = tx.QueryRow(r.Context(), `UPDATE creator_inquiries SET status='resolved',resolution=$2,resolved_at=now()
-		WHERE id::text=$1 AND status='open' RETURNING id`, r.PathValue("id"), strings.TrimSpace(input.Resolution)).Scan(&id)
+		WHERE id=$1 AND status='open' RETURNING id`, r.PathValue("id"), strings.TrimSpace(input.Resolution)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -109,7 +109,7 @@ func (a *app) adminResolveCreatorInquiry(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
-		VALUES($1,'creator_inquiry_resolved',jsonb_build_object('inquiry_id',$2))`, operator, id); err != nil {
+		VALUES($1,'creator_inquiry_resolved',jsonb_build_object('inquiry_id',$2::uuid))`, operator, id); err != nil {
 		http.Error(w, "database error", 500)
 		return
 	}

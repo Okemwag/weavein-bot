@@ -57,7 +57,7 @@ func (a *app) queueExpiryReminders(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		message := fmt.Sprintf("Your %s membership is paid through %s. Check renewal status in MemberOS. If renewal is off, access will end after this date.", item.title, item.until.Format("2 Jan 2006"))
+		message := fmt.Sprintf("Heads up: your %s membership runs until %s. If renewal is on, there's nothing you need to do. If you cancelled it, your access ends on that date.", item.title, item.until.Format("2 Jan 2006"))
 		key := fmt.Sprintf("expiry-reminder:%s:%d", item.subID, item.until.Unix())
 		if err := notify.Queue(ctx, tx, item.bot, item.user, key, message); err != nil {
 			_ = tx.Rollback(ctx)

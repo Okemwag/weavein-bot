@@ -88,21 +88,23 @@ func (a *app) adminHealth(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
-	var pendingUpdates, failedUpdates, pendingJobs, failedJobs, failedNotices, openTickets int
+	var pendingUpdates, failedUpdates, pendingJobs, failedJobs, failedNotices, uncertainNotices, uncertainRefunds, openTickets int
 	err := a.db.QueryRow(r.Context(), `SELECT
   (SELECT count(*) FROM telegram_updates WHERE state='pending'),
-  (SELECT count(*) FROM telegram_updates WHERE state IN ('failed','quarantined')),
+  (SELECT count(*) FROM telegram_updates WHERE state IN ('failed','quarantined','answer_unknown')),
   (SELECT count(*) FROM access_jobs WHERE status='pending'),
   (SELECT count(*) FROM access_jobs WHERE status='failed'),
   (SELECT count(*) FROM notifications WHERE status='failed'),
+  (SELECT count(*) FROM notifications WHERE status IN ('sending','uncertain')),
+  (SELECT count(*) FROM refund_requests WHERE status='needs_review'),
   (SELECT count(*) FROM support_tickets WHERE status<>'resolved')`).
-		Scan(&pendingUpdates, &failedUpdates, &pendingJobs, &failedJobs, &failedNotices, &openTickets)
+		Scan(&pendingUpdates, &failedUpdates, &pendingJobs, &failedJobs, &failedNotices, &uncertainNotices, &uncertainRefunds, &openTickets)
 	if err != nil {
 		http.Error(w, "database error", 500)
 		return
 	}
 	rows, err := a.db.Query(r.Context(), `SELECT id,title,connection_status,last_permission_check_at,last_permission_error
- FROM communities WHERE billing_mode='managed_bot' AND connection_status<>'healthy'
+ FROM communities WHERE connection_status<>'healthy'
  ORDER BY last_permission_check_at NULLS FIRST LIMIT 100`)
 	if err != nil {
 		http.Error(w, "database error", 500)
@@ -125,7 +127,8 @@ func (a *app) adminHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"pending_updates": pendingUpdates, "failed_updates": failedUpdates, "pending_access_jobs": pendingJobs,
-		"failed_access_jobs": failedJobs, "failed_notifications": failedNotices, "open_support_tickets": openTickets,
+		"failed_access_jobs": failedJobs, "failed_notifications": failedNotices, "uncertain_notifications": uncertainNotices,
+		"refunds_needing_review": uncertainRefunds, "open_support_tickets": openTickets,
 		"unhealthy_communities": communities, "telegram_webhook": a.webhookHealth(r.Context())})
 }
 
@@ -218,7 +221,7 @@ func (a *app) adminResolveSupportTicket(w http.ResponseWriter, r *http.Request) 
 	var community string
 	var member int64
 	err = tx.QueryRow(r.Context(), `UPDATE support_tickets SET status='resolved',resolution=$2,updated_at=now()
- WHERE id::text=$1 AND status<>'resolved' RETURNING community_id,telegram_user_id`, r.PathValue("id"), strings.TrimSpace(input.Resolution)).Scan(&community, &member)
+ WHERE id=$1 AND status<>'resolved' RETURNING community_id,telegram_user_id`, r.PathValue("id"), strings.TrimSpace(input.Resolution)).Scan(&community, &member)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -228,7 +231,7 @@ func (a *app) adminResolveSupportTicket(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
- VALUES($1,'platform_support_resolved',jsonb_build_object('ticket_id',$2,'community_id',$3,'member_id',$4))`, admin, r.PathValue("id"), community, member)
+ VALUES($1,'platform_support_resolved',jsonb_build_object('ticket_id',$2::uuid,'community_id',$3::uuid,'member_id',$4::bigint))`, admin, r.PathValue("id"), community, member)
 	if err != nil || tx.Commit(r.Context()) != nil {
 		http.Error(w, "database error", 500)
 		return

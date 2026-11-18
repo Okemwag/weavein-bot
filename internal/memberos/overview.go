@@ -15,8 +15,8 @@ func (a *app) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id, mode string
-	err = a.db.QueryRow(r.Context(), `SELECT c.id,c.billing_mode FROM communities c JOIN creator_users cu ON cu.creator_id=c.creator_id
-        WHERE c.id::text=$1 AND cu.telegram_user_id=$2`, r.PathValue("id"), userID).Scan(&id, &mode)
+	err = a.db.QueryRow(r.Context(), `SELECT c.id,c.billing_mode FROM communities c JOIN workspace_members wm ON wm.workspace_id=c.workspace_id
+        WHERE c.id=$1 AND wm.telegram_user_id=$2`, r.PathValue("id"), userID).Scan(&id, &mode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -34,7 +34,7 @@ func (a *app) overview(w http.ResponseWriter, r *http.Request) {
 	var lastObserved *time.Time
 	err = a.db.QueryRow(r.Context(), `SELECT count(*) FILTER (WHERE member_status IN ('member','administrator','creator')),
 		count(*) FILTER (WHERE member_status IN ('member','administrator','creator') AND subscription_until IS NOT NULL), max(observed_at)
-        FROM access_observations WHERE community_id::text=$1`, id).Scan(&observed, &knownExpiry, &lastObserved)
+        FROM access_observations WHERE community_id=$1`, id).Scan(&observed, &knownExpiry, &lastObserved)
 	if err != nil {
 		http.Error(w, "database error", 500)
 		return

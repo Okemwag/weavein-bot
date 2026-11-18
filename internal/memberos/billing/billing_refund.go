@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func recordRefund(ctx context.Context, tx pgx.Tx, botID, updateID int64, message paymentMessage) error {
+func recordRefund(ctx context.Context, tx pgx.Tx, botID, updateID, seq int64, message paymentMessage) error {
 	p := message.Refunded
 	if p.Currency != "XTR" || p.ChargeID == "" || p.Amount <= 0 {
 		return eventing.InvalidEvent("invalid refund fields")
@@ -27,7 +27,7 @@ func recordRefund(ctx context.Context, tx pgx.Tx, botID, updateID int64, message
         WHERE p.billing_bot_id=$1 AND p.telegram_charge_id=$2 FOR UPDATE OF p,s`, botID, p.ChargeID).
 		Scan(&paymentID, &subscriptionID, &communityID, &creatorID, &buyerID, &expectedBot, &payload, &amount, &refundedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return eventing.InvalidEvent("unknown refunded charge")
+		return eventing.DependencyPending("refund awaits original charge")
 	}
 	if err != nil {
 		return err
@@ -57,7 +57,20 @@ func recordRefund(ctx context.Context, tx pgx.Tx, botID, updateID int64, message
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE subscriptions SET state=CASE WHEN EXISTS(SELECT 1 FROM entitlements
-        WHERE subscription_id=$1 AND status='active') THEN state ELSE 'refunded' END,updated_at=now() WHERE id=$1`, subscriptionID)
+	        WHERE subscription_id=$1 AND status='active') THEN
+			CASE WHEN auto_renew_state='off' THEN 'cancel_scheduled'
+				WHEN auto_renew_state='failed' THEN 'payment_failed' ELSE 'active' END
+			ELSE 'refunded' END,
+		last_billing_seq=GREATEST(last_billing_seq,$2),updated_at=now() WHERE id=$1`, subscriptionID, seq)
+	if err != nil {
+		return err
+	}
+	// A refund that ends access must also stop the next charge. Refunding an
+	// older payment while a later one is still current leaves renewal alone.
+	_, err = tx.Exec(ctx, `INSERT INTO access_jobs(community_id,telegram_user_id,action,dedupe_key,subscription_id)
+		SELECT s.community_id,s.telegram_user_id,'cancel_renewal',$2,s.id FROM subscriptions s
+		WHERE s.id=$1 AND s.state='refunded' AND s.auto_renew_state='on'
+		ON CONFLICT (dedupe_key) DO NOTHING`, subscriptionID, "cancel-renewal:refund:"+p.ChargeID)
 	if err != nil {
 		return err
 	}
@@ -67,7 +80,7 @@ func recordRefund(ctx context.Context, tx pgx.Tx, botID, updateID int64, message
 		return err
 	}
 	if err := notify.Queue(ctx, tx, botID, buyerID, "refund:"+p.ChargeID,
-		"Your "+strconv.Itoa(p.Amount)+" Stars refund was confirmed. Open MemberOS to review your current access and support options."); err != nil {
+		"Your "+strconv.Itoa(p.Amount)+" Stars refund is confirmed. Open MemberOS to see your membership, or to get help."); err != nil {
 		return err
 	}
 	return AuditEvent(ctx, tx, creatorID, buyerID, "payment_refunded", updateID)

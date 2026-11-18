@@ -24,8 +24,8 @@ func (s Service) setCommunityHealth(ctx context.Context, communityID, state, rea
 		return err
 	}
 	if previous != state && state != "healthy" {
-		rows, err := tx.Query(ctx, `SELECT cu.telegram_user_id FROM communities c JOIN creator_users cu ON cu.creator_id=c.creator_id
-            JOIN workspaces w ON w.id=c.workspace_id WHERE c.id=$1 AND cu.role='owner' AND w.notifications_enabled`, communityID)
+		rows, err := tx.Query(ctx, `SELECT wm.telegram_user_id FROM communities c JOIN workspace_members wm ON wm.workspace_id=c.workspace_id
+            JOIN workspaces w ON w.id=c.workspace_id WHERE c.id=$1 AND wm.role='owner' AND w.notifications_enabled`, communityID)
 		if err != nil {
 			return err
 		}
@@ -44,7 +44,7 @@ func (s Service) setCommunityHealth(ctx context.Context, communityID, state, rea
 		}
 		rows.Close()
 		for _, owner := range owners {
-			message := fmt.Sprintf("MemberOS cannot manage access for %s: %s. Check the bot's administrator rights in Telegram, then recheck the connection in Studio.", title, reason)
+			message := fmt.Sprintf("MemberOS can't manage %s right now, so new members can't get in (%s). Check that MemberOS is still an admin, then tap I fixed it, check again in MemberOS.", title, reason)
 			key := fmt.Sprintf("bot-health:%s:%s:%s", communityID, state, time.Now().UTC().Format("2006-01-02"))
 			if err := notify.Queue(ctx, tx, s.BotID, owner, key, message); err != nil {
 				return err

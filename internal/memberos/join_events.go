@@ -35,7 +35,7 @@ func (a *app) processJoinRequest(ctx context.Context, tx pgx.Tx, updateID int64,
 	var communityID, creatorID string
 	err := tx.QueryRow(ctx, `SELECT id,creator_id FROM communities WHERE telegram_chat_id=$1 AND billing_mode='managed_bot' AND status='published'`, req.Chat.ID).Scan(&communityID, &creatorID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return eventing.InvalidEvent("join request for unmanaged chat")
+		return eventing.IgnoredEvent("join request for unmanaged chat")
 	}
 	if err != nil {
 		return err
@@ -52,10 +52,7 @@ func (a *app) processJoinRequest(ctx context.Context, tx pgx.Tx, updateID int64,
 		return err
 	}
 	var eligible bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM entitlements WHERE community_id=$1
-        AND telegram_user_id=$2 AND status='active' AND valid_until>now())
-        OR EXISTS(SELECT 1 FROM access_overrides WHERE community_id=$1 AND telegram_user_id=$2
-        AND active=true AND valid_until>now())`, communityID, req.From.ID).Scan(&eligible)
+	err = tx.QueryRow(ctx, `SELECT member_has_access($1,$2)`, communityID, req.From.ID).Scan(&eligible)
 	if err != nil {
 		return err
 	}

@@ -38,7 +38,9 @@ type subscriptionChange struct {
 	State   string `json:"state"`
 }
 
-func ProcessMessage(ctx context.Context, tx pgx.Tx, botID, updateID int64, raw []byte) error {
+// ProcessMessage takes seq, the inbox position. Telegram update IDs cannot order
+// events because they turn random after a quiet week.
+func ProcessMessage(ctx context.Context, tx pgx.Tx, botID, updateID, seq int64, raw []byte) error {
 	var wrapper struct {
 		Message paymentMessage `json:"message"`
 	}
@@ -47,10 +49,16 @@ func ProcessMessage(ctx context.Context, tx pgx.Tx, botID, updateID int64, raw [
 	}
 	message := wrapper.Message
 	if message.Successful != nil {
-		return recordPayment(ctx, tx, botID, updateID, message)
+		if IsSaaSPayload(message.Successful.Payload) {
+			return recordSaaSPayment(ctx, tx, botID, updateID, seq, message)
+		}
+		return recordPayment(ctx, tx, botID, updateID, seq, message)
 	}
 	if message.Refunded != nil {
-		return recordRefund(ctx, tx, botID, updateID, message)
+		if IsSaaSPayload(message.Refunded.Payload) {
+			return recordSaaSRefund(ctx, tx, botID, updateID, message)
+		}
+		return recordRefund(ctx, tx, botID, updateID, seq, message)
 	}
-	return eventing.InvalidEvent("non-payment message ignored")
+	return eventing.IgnoredEvent("non-payment message ignored")
 }

@@ -38,7 +38,7 @@ func (a *app) updateWorkspace(w http.ResponseWriter, r *http.Request) {
 	var workspaceID, creatorID string
 	err = tx.QueryRow(r.Context(), `SELECT w.id,w.creator_id FROM workspaces w
 		JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.telegram_user_id=$2 AND wm.role='owner'
-		WHERE w.id::text=$1 FOR UPDATE OF w`, r.PathValue("id"), userID).Scan(&workspaceID, &creatorID)
+		WHERE w.id=$1 FOR UPDATE OF w`, r.PathValue("id"), userID).Scan(&workspaceID, &creatorID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return

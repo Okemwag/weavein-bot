@@ -39,7 +39,7 @@ func (a *app) adminDisputeEvidence(w http.ResponseWriter, r *http.Request) {
 		'access_jobs',coalesce((SELECT jsonb_agg(x) FROM (SELECT id,action,status,attempts,last_error,finished_at
 			FROM access_jobs WHERE community_id=t.community_id AND telegram_user_id=t.telegram_user_id
 			ORDER BY run_after DESC LIMIT 100) x),'[]'::jsonb)
-		) FROM support_tickets t WHERE t.id::text=$1`, r.PathValue("id")).Scan(&evidence)
+		) FROM support_tickets t WHERE t.id=$1`, r.PathValue("id")).Scan(&evidence)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -49,7 +49,7 @@ func (a *app) adminDisputeEvidence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
-		VALUES($1,'dispute_evidence_viewed',jsonb_build_object('ticket_id',$2))`, operator, r.PathValue("id")); err != nil {
+		VALUES($1,'dispute_evidence_viewed',jsonb_build_object('ticket_id',$2::uuid))`, operator, r.PathValue("id")); err != nil {
 		http.Error(w, "database error", 500)
 		return
 	}

@@ -22,9 +22,9 @@ func (a *app) requireCreatorCommunity(w http.ResponseWriter, r *http.Request) (c
 	}
 	var access creatorCommunityAccess
 	access.User = user
-	err = a.db.QueryRow(r.Context(), `SELECT c.id,c.billing_mode,cu.role FROM communities c
-        JOIN creator_users cu ON cu.creator_id=c.creator_id
-        WHERE c.id::text=$1 AND cu.telegram_user_id=$2`, r.PathValue("id"), user).
+	err = a.db.QueryRow(r.Context(), `SELECT c.id,c.billing_mode,wm.role FROM communities c
+        JOIN workspace_members wm ON wm.workspace_id=c.workspace_id
+        WHERE c.id=$1 AND wm.telegram_user_id=$2`, r.PathValue("id"), user).
 		Scan(&access.ID, &access.Mode, &access.Role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)

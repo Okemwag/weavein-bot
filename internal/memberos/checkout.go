@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"memberos/internal/store"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -28,14 +29,14 @@ func (a *app) checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.cfg.managedEnabled || a.cfg.botRecipientAck != strconv.FormatInt(a.cfg.botID, 10) {
-		http.Error(w, "managed checkout unavailable", http.StatusServiceUnavailable)
+		http.Error(w, "Joining is paused right now. Please try again later", http.StatusServiceUnavailable)
 		return
 	}
 	var body struct {
 		CommunityID string `json:"community_id"`
 		PlanID      string `json:"plan_id"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil || body.CommunityID == "" {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil || !validUUID(body.CommunityID) {
 		http.Error(w, "invalid request", 400)
 		return
 	}
@@ -45,7 +46,7 @@ func (a *app) checkout(w http.ResponseWriter, r *http.Request) {
 		JOIN saas_accounts sa ON sa.workspace_id=c.workspace_id AND sa.status='active' AND sa.managed_billing_allowed
 		JOIN plans p ON p.community_id=c.id AND p.workspace_id=c.workspace_id AND p.status='active'
 		JOIN LATERAL (SELECT * FROM plan_versions WHERE plan_id=p.id ORDER BY version DESC LIMIT 1) v ON true
-		WHERE c.id::text=$1 AND c.status='published' AND c.billing_mode='managed_bot' AND c.billing_bot_id=$2
+		WHERE c.id=$1 AND c.status='published' AND c.billing_mode='managed_bot' AND c.billing_bot_id=$2
 		AND (p.id::text=$3 OR ($3='' AND p.name='Membership'))`, body.CommunityID, a.cfg.botID, body.PlanID).
 		Scan(&communityID, &creatorID, &title, &planVersionID, &planName, &price)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -77,7 +78,22 @@ func (a *app) checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !checkoutAllowed {
-		http.Error(w, "community is no longer accepting checkout", http.StatusConflict)
+		http.Error(w, "This community isn't taking new members right now", http.StatusConflict)
+		return
+	}
+	// Every invoice creates its own recurring Telegram subscription, so a second
+	// one for the same community would bill the member twice.
+	if err := store.LockAccess(r.Context(), tx, communityID, userID); err != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	var alreadySubscribed bool
+	if err := tx.QueryRow(r.Context(), `SELECT member_has_live_subscription($1,$2)`, communityID, userID).Scan(&alreadySubscribed); err != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	if alreadySubscribed {
+		http.Error(w, "You already have a membership here, so you won't be charged again", http.StatusConflict)
 		return
 	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO members(creator_id,telegram_user_id,first_name,username)
@@ -111,7 +127,7 @@ func (a *app) checkout(w http.ResponseWriter, r *http.Request) {
 	}, &invoiceURL)
 	if err != nil || invoiceURL == "" {
 		_, _ = a.db.Exec(context.Background(), `UPDATE checkout_attempts SET status='failed' WHERE id=$1 AND status='pending'`, checkoutID)
-		http.Error(w, "Telegram invoice unavailable", http.StatusBadGateway)
+		http.Error(w, "Telegram couldn't create your invoice. Please try again in a moment", http.StatusBadGateway)
 		return
 	}
 	if _, err := a.db.Exec(r.Context(), `UPDATE checkout_attempts SET invoice_url=$2 WHERE id=$1`, checkoutID, invoiceURL); err != nil {

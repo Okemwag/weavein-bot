@@ -21,8 +21,8 @@ func (a *app) creatorCommunityForMode(w http.ResponseWriter, r *http.Request, ma
 		return "", false
 	}
 	var mode string
-	err = a.db.QueryRow(r.Context(), `SELECT c.billing_mode FROM communities c JOIN creator_users cu ON cu.creator_id=c.creator_id
-        WHERE c.id::text=$1 AND cu.telegram_user_id=$2`, r.PathValue("id"), user).Scan(&mode)
+	err = a.db.QueryRow(r.Context(), `SELECT c.billing_mode FROM communities c JOIN workspace_members wm ON wm.workspace_id=c.workspace_id
+        WHERE c.id=$1 AND wm.telegram_user_id=$2`, r.PathValue("id"), user).Scan(&mode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return "", false
@@ -48,9 +48,7 @@ func (a *app) creatorAccessMismatches(w http.ResponseWriter, r *http.Request) {
           UNION SELECT telegram_user_id FROM access_observations WHERE community_id=$1
 		  UNION SELECT telegram_user_id FROM access_overrides WHERE community_id=$1
         ) SELECT k.telegram_user_id,
-	          (EXISTS(SELECT 1 FROM entitlements e WHERE e.community_id=$1 AND e.telegram_user_id=k.telegram_user_id
-            AND e.status='active' AND e.valid_until>now()) OR EXISTS(SELECT 1 FROM access_overrides o
-            WHERE o.community_id=$1 AND o.telegram_user_id=k.telegram_user_id AND o.active=true AND o.valid_until>now())),
+	          member_has_access($1,k.telegram_user_id),
           o.member_status,o.observed_at,
           EXISTS(SELECT 1 FROM access_jobs j WHERE j.community_id=$1 AND j.telegram_user_id=k.telegram_user_id
             AND j.status='failed')
@@ -182,7 +180,7 @@ func (a *app) creatorResolveTicket(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = tx.Rollback(r.Context()) }()
 	var member int64
 	err = tx.QueryRow(r.Context(), `UPDATE support_tickets SET status='resolved',resolution=$3,updated_at=now()
-        WHERE id::text=$1 AND community_id=$2 AND status<>'resolved' RETURNING telegram_user_id`, r.PathValue("ticket_id"), community, strings.TrimSpace(input.Resolution)).Scan(&member)
+        WHERE id=$1 AND community_id=$2 AND status<>'resolved' RETURNING telegram_user_id`, r.PathValue("ticket_id"), community, strings.TrimSpace(input.Resolution)).Scan(&member)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -192,7 +190,7 @@ func (a *app) creatorResolveTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
-        VALUES($1,'support_ticket_resolved',jsonb_build_object('ticket_id',$2,'member_id',$3))`, user, r.PathValue("ticket_id"), member)
+        VALUES($1,'support_ticket_resolved',jsonb_build_object('ticket_id',$2::uuid,'member_id',$3::bigint))`, user, r.PathValue("ticket_id"), member)
 	if err != nil || tx.Commit(r.Context()) != nil {
 		http.Error(w, "database error", 500)
 		return

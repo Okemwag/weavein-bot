@@ -19,6 +19,8 @@ type TelegramIdentity struct {
 	ID        int64  `json:"id"`
 	FirstName string `json:"first_name"`
 	Username  string `json:"username"`
+	// AllowsWriteToPM is Telegram's signed statement that the bot may message this user.
+	AllowsWriteToPM bool `json:"allows_write_to_pm"`
 }
 
 func VerifyInitData(raw, token string, now time.Time) (TelegramIdentity, error) {

@@ -22,6 +22,9 @@ import (
 func TestManagedPaymentLifecyclePostgres(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatal("TEST_DATABASE_URL is required in CI")
+		}
 		t.Skip("set TEST_DATABASE_URL to run PostgreSQL integration test")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -377,7 +380,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 func TestMiniAppAssets(t *testing.T) {
 	a := &app{}
-	for _, path := range []string{"/app/", "/app/app.css", "/app/app.js", "/app/shared.js", "/app/subscriber.js", "/app/creator.js"} {
+	for _, path := range []string{"/app/", "/app/app.css", "/app/app.js", "/app/shared.js", "/app/subscriber.js", "/app/member_status.js", "/app/creator.js"} {
 		response := httptest.NewRecorder()
 		a.routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != 200 {

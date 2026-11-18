@@ -20,7 +20,7 @@ func (a *app) adminReconcileStars(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := a.db.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
-		VALUES($1,'stars_reconciliation_started',jsonb_build_object('run_id',$2,'bot_id',$3))`, operatorID, runID, a.cfg.botID); err != nil {
+		VALUES($1,'stars_reconciliation_started',jsonb_build_object('run_id',$2::uuid,'bot_id',$3::bigint))`, operatorID, runID, a.cfg.botID); err != nil {
 		a.finishStarRun(r, runID, "failed", 0, 0, "audit write failed")
 		http.Error(w, "database error", 500)
 		return
