@@ -13,7 +13,17 @@ var assets embed.FS
 var home = template.Must(template.ParseFS(assets, "index.html"))
 var botName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{4,31}$`)
 
-func Handler(username string) http.Handler {
+// Policies holds operator-published legal document URLs. Empty fields are not shown.
+type Policies struct {
+	Terms   string `json:"terms_url,omitempty"`
+	Privacy string `json:"privacy_url,omitempty"`
+	Refunds string `json:"refund_policy_url,omitempty"`
+}
+
+// Complete reports whether every buyer-facing policy is published.
+func (p Policies) Complete() bool { return p.Terms != "" && p.Privacy != "" && p.Refunds != "" }
+
+func Handler(username string, policies Policies) http.Handler {
 	botURL := ""
 	if botName.MatchString(username) {
 		botURL = "https://t.me/" + username + "?startapp"
@@ -26,7 +36,7 @@ func Handler(username string) http.Handler {
 		switch r.URL.Path {
 		case "/", "/pricing", "/support":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_ = home.Execute(w, map[string]any{"BotURL": botURL})
+			_ = home.Execute(w, map[string]any{"BotURL": botURL, "Policies": policies})
 		case "/site.css", "/site.js":
 			if r.URL.Path == "/site.css" {
 				w.Header().Set("Content-Type", "text/css; charset=utf-8")

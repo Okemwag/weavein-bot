@@ -189,3 +189,5 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / .45); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
 }
+
+.policy-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }

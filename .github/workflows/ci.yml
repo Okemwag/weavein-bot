@@ -34,3 +34,14 @@ jobs:
       - run: go vet ./...
       - run: go test -race -count=1 ./...
       - uses: golangci/golangci-lint-action@v8
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container image
+        run: docker build -t memberos:ci .
+      - name: Image starts and rejects missing configuration
+        run: |
+          if docker run --rm memberos:ci 2>err.txt; then echo "started without configuration" >&2; exit 1; fi
+          grep -q "TELEGRAM_BOT_ID" err.txt

@@ -214,6 +214,23 @@ function openTelegramLink(value) {
   else window.location.assign(link);
 }
 
+// openExternalLink opens an operator-published https page outside the Mini App.
+function openExternalLink(value) {
+  let link = null;
+  try { const parsed = new URL(value); if (parsed.protocol === 'https:' && !parsed.username) link = parsed.href; } catch { /* rejected below */ }
+  if (!link) { notice("That link doesn't look right.", true); return; }
+  if (tg?.openLink) tg.openLink(link);
+  else window.open(link, '_blank', 'noopener');
+}
+
+// policyLinks lists the published Terms, Privacy and Refund pages, or nothing.
+function policyLinks(policies) {
+  const items = [['Terms', policies?.terms_url], ['Privacy', policies?.privacy_url], ['Refund policy', policies?.refund_policy_url]]
+    .filter(([, url]) => url);
+  if (!items.length) return null;
+  return el('div', 'policy-links', ...items.map(([label, url]) => actionButton(label, 'text-button', () => openExternalLink(url))));
+}
+
 function date(value) {
   if (!value) return 'unknown date';
   const parsed = new Date(value);
@@ -236,4 +253,4 @@ function statusPill(status) {
 }
 
 export { tg, state, byId, uuid, node, el, notice, api, show, highlightTab, setAction, setBack, actionButton, field, submitForm, submitButton,
-  fold, confirmSheet, textSheet, openTelegramLink, date, stars, memberStatusLabel, statusPill };
+  fold, confirmSheet, textSheet, openTelegramLink, openExternalLink, policyLinks, date, stars, memberStatusLabel, statusPill };

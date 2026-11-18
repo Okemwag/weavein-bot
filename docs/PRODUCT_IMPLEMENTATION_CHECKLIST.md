@@ -9,7 +9,7 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - P0 is the commercial release gate. P1 and P2 are tracked below as open backlog. An unchecked feature is a requirement, not a claim of implementation.
 - Native paid-channel membership and bot-managed billing are separate modes. Native channel billing history is unavailable to this bot and must not be represented as recorded revenue. The managed mode has one configured receiving bot per service deployment; creator ownership of that bot is an operator attestation, not automated verification.
 
-**Release assessment: not ready for real paying creators.** Go build, vet and lint and JavaScript syntax checks pass for current code. Tests remain skipped at the user request. New CRM, notification, override, and operations migrations and flows have not passed PostgreSQL or live Telegram validation. No Telegram test-environment payment, real creator pilot, backup restore or production support flow has been demonstrated.
+**Release assessment: not ready for real paying creators.** As of 2026-11-18, build, vet, lint, gofmt, JavaScript syntax checks and `go test -race ./...` against PostgreSQL 16 and 17 pass locally and in CI, including the integration, regression and SQL prepare suites. A local backup and restore of a fully migrated database has been exercised. None of the flows have passed live Telegram validation. No Telegram test-environment payment, real creator pilot, published legal policy, staging deployment or production support flow has been demonstrated.
 
 ## P0 — Public website, discovery and positioning
 
@@ -18,7 +18,7 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [ ] Validated MemberOS SaaS pricing page.
 - [x] Interactive subscriber journey walkthrough with a direct Mini App preview link.
 - [x] Configurable Telegram bot entry link opens the Mini App creator registration flow; live BotFather configuration remains open.
-- [ ] Published Terms of Service, Privacy Policy, and Support pages.
+- [ ] Published Terms of Service, Privacy Policy, and Support pages. Partial: `TERMS_URL`, `PRIVACY_URL` and `REFUND_POLICY_URL` are linked from the site footer, the Mini App and `/terms` when set; the documents themselves are not written.
 - [x] Public creator contact form stores rate-limited inquiries; protected Ops lists and resolves them with an audit entry.
 - [x] Site links to the Mini App and to the configured bot when `TELEGRAM_BOT_USERNAME` is set. Production configuration remains open.
 
@@ -72,8 +72,8 @@ Based on **MemberOS — Complete Product Requirements & Development Checklist**,
 - [x] Mini App shows pending, confirmed, failed and expired states from a server-backed checkout attempt; live Telegram checkout remains unverified.
 - [x] Show the native link or managed join link when applicable.
 - [x] My Memberships lists known managed memberships with paid-through dates and observed native access.
-- [ ] Renewal and cancellation options for each mode. Partial: managed mode can turn off renewal; native mode only shows observed expiry.
-- [ ] In-app support, refund-policy, and terms links. Partial: support contact text is shown.
+- [x] Renewal and cancellation options for each mode: managed mode turns off renewal in the app; native mode explains cancellation through Telegram's My Stars, because the bot cannot cancel a native channel subscription.
+- [x] In-app support contact plus Terms, Privacy and Refund policy links before checkout and under Billing and support, shown when the operator configures their URLs. Managed billing refuses to start without all three.
 - [ ] Verified mobile and light/dark Telegram layouts. Partial: one mobile light-theme preview was checked in headless Chrome; Telegram dark theme was not tested.
 - [x] Reopening the Mini App reloads checkout and membership state and can reopen a pending invoice.
 
@@ -200,7 +200,7 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 - [ ] Complete controlled refund issuance. Partial: protected admin approval records reason and audit, then calls Telegram; live refund confirmation and published policy remain open.
 - [x] Ticket resolution and refund review actions are recorded in audit and request records.
 - [x] Ops flags overdue tickets, alerts the operator, and records an assigned, audited escalation reason before resolution. Live notification delivery remains unverified.
-- [ ] Published refund and cancellation terms before checkout.
+- [ ] Published refund and cancellation terms before checkout. Partial: managed checkout cannot be enabled until policy URLs are configured, and the Mini App links them above the pay action; the policy text is not written.
 - [x] Protected, audited ticket evidence retrieval covers known checkout, payment, subscription and access records; `docs/DISPUTE_EVIDENCE.md` defines preservation and disclosure handling. Legal retention scheduling remains open.
 
 ## P0 — MemberOS internal administration
@@ -229,7 +229,7 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 - [x] Enforce unique update and charge IDs; PostgreSQL test covers a duplicate charge.
 - [x] In-process bounded rate limiting covers public catalog, sessions, checkouts and support requests; distributed limits remain a deployment consideration.
 - [ ] Personal-data retention and deletion policy, plus enforcement jobs.
-- [ ] Backup schedule and tested restore.
+- [ ] Backup schedule and tested restore. Partial: on 2026-11-18 a backup of a fully migrated database restored into an empty database with matching tables, functions and migrations, and both refusal guards worked; no production schedule or offsite copy exists.
 - [ ] Legally reviewed Terms and Privacy Policy.
 - [ ] Published dispute and refund policy.
 - [ ] Kenyan and international data-protection assessment.
@@ -238,7 +238,7 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 ## P0 — Backend infrastructure and reliability
 
 - [x] Modular Go executable with separate identity, Telegram, lifecycle, and Mini App packages.
-- [x] Ordered PostgreSQL migrations from 001_initial through 018_join_guidance.
+- [x] Ordered PostgreSQL migrations from 001_initial through 025_operations_resolution; `memberos migrate` applies them without starting the service.
 - [ ] Full tenant-aware data model and repository boundary. Partial: explicit workspaces, plan ownership constraints, and tenant API tests exist; repository boundaries and comprehensive cross-tenant tests remain.
 - [x] Durable Telegram webhook inbox before acknowledgement.
 - [x] Reject invalid webhook secrets and deduplicate `(bot_id, update_id)`.
@@ -253,7 +253,7 @@ The Free/Starter/Growth/Business figures in the blueprint are hypotheses, not co
 - [x] Liveness and database readiness endpoints.
 - [x] `scripts/backup-db.sh` creates a restricted PostgreSQL archive and `scripts/restore-db.sh` restores into an empty target database. A scheduled backup and tested restore remain release gates.
 - [ ] Complete API validation, authorization, and abuse controls. Partial: body limits and selected role checks exist.
-- [ ] CI/CD pipeline and staging deployment.
+- [ ] CI/CD pipeline and staging deployment. Partial: GitHub Actions checks formatting, vet, race tests against PostgreSQL and lint, and builds and smoke-tests the container image; no staging environment or deploy step exists.
 - [x] Periodic operational notices to a reachable configured admin cover delayed/failed webhook work, failed access jobs and missing observed Stars charges after reconciliation; managed community permission changes alert reachable owners. Delivery and response still require live validation.
 
 ## P1 and P2 backlog

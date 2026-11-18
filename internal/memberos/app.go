@@ -20,6 +20,9 @@ import (
 )
 
 func Run() error {
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		return migrateOnly()
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -108,4 +111,28 @@ func superviseWorker(ctx context.Context, run func(context.Context)) {
 		case <-time.After(5 * time.Second):
 		}
 	}
+}
+
+// migrateOnly applies pending migrations and exits. It needs only DATABASE_URL,
+// so a deploy can run it as a release step before starting the service.
+func migrateOnly() error {
+	url := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if url == "" {
+		return errors.New("DATABASE_URL is required")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	db, err := pgxpool.New(ctx, url)
+	if err != nil {
+		return fmt.Errorf("postgres configuration: %w", err)
+	}
+	defer db.Close()
+	if err := db.Ping(ctx); err != nil {
+		return fmt.Errorf("postgres: %w", err)
+	}
+	if err := store.Migrate(ctx, db); err != nil {
+		return err
+	}
+	slog.Info("migrations applied")
+	return nil
 }

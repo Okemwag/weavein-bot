@@ -80,6 +80,7 @@ The service reads environment variables. For local use, fill in the Git-ignored 
 | `PUBLIC_WEBHOOK_URL` | HTTPS public origin used by the Manage tab connection and CLI provisioning to register the Telegram webhook |
 | `TELEGRAM_BOT_USERNAME` | Optional bot username for public website links into the Telegram Mini App |
 | `MEMBEROS_ADMIN_TELEGRAM_ID` | Optional numeric Telegram ID allowed to use the protected operations APIs; without it those APIs are disabled |
+| `TERMS_URL`, `PRIVACY_URL`, `REFUND_POLICY_URL` | HTTPS links to your published Terms of Service, Privacy Policy and refund policy. Shown on the site footer, in the Mini App before checkout and in the `/terms` reply. Required when `MANAGED_BILLING_ENABLED=true` |
 
 Operations APIs require a fresh Mini App bearer session for `MEMBEROS_ADMIN_TELEGRAM_ID`. `GET /api/v1/admin/updates`, `GET /api/v1/admin/access-jobs`, and `GET /api/v1/admin/notifications` list exceptions. Retrying an uncertain notification requires `acknowledge_duplicate_risk=true` and creates an audit record. `POST /api/v1/admin/reconcile-access` checks known members, while `POST /api/v1/admin/reconcile-stars` pages through the bot transactions returned by Telegram and records the operator. `GET /api/v1/admin/star-discrepancies` reports unmatched observations and recorded charges. `GET /api/v1/admin/refund-requests` lists requests; `POST /api/v1/admin/refund-requests/{id}/approve` calls `refundStarPayment` once and then waits for Telegram's refund update. An uncertain refund result remains `needs_review` and requires operator investigation before any further action.
 
@@ -88,6 +89,8 @@ For the one-time `provision` or `provision-managed` command also set `CREATOR_TE
 Set `CREATOR_WORKSPACE_ID` during CLI provisioning to attach another verified community to an existing workspace owned by `CREATOR_TELEGRAM_ID`. Without it, CLI provisioning creates a new workspace. In the Mini App, a creator can create a workspace and connect a verified private chat. Managed billing setup in the Mini App is available only when the operator binds that workspace to the recipient bot through `MANAGED_BILLING_WORKSPACE_ID`; native channel setup does not require this binding.
 
 ```sh
+# Apply migrations only (needs DATABASE_URL); suitable as a deploy release step:
+go run ./cmd/memberos migrate
 go run ./cmd/memberos provision
 # Or, for a private channel or supergroup with the creator-owned billing bot:
 go run ./cmd/memberos provision-managed

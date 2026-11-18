@@ -2,7 +2,9 @@ package memberos
 
 import (
 	"errors"
+	"memberos/web/publicsite"
 	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -22,6 +24,7 @@ type config struct {
 	botUsername        string
 	adminTelegramID    int64
 	trustedProxies     []netip.Prefix
+	policies           publicsite.Policies
 }
 
 func loadConfig() (config, error) {
@@ -36,6 +39,11 @@ func loadConfig() (config, error) {
 		managedWorkspaceID: os.Getenv("MANAGED_BILLING_WORKSPACE_ID"),
 		publicWebhookURL:   os.Getenv("PUBLIC_WEBHOOK_URL"),
 		botUsername:        os.Getenv("TELEGRAM_BOT_USERNAME"),
+		policies: publicsite.Policies{
+			Terms:   strings.TrimSpace(os.Getenv("TERMS_URL")),
+			Privacy: strings.TrimSpace(os.Getenv("PRIVACY_URL")),
+			Refunds: strings.TrimSpace(os.Getenv("REFUND_POLICY_URL")),
+		},
 	}
 	if c.address == "" {
 		c.address = ":8080"
@@ -54,6 +62,15 @@ func loadConfig() (config, error) {
 			return c, errors.New("MEMBEROS_ADMIN_TELEGRAM_ID must be a positive integer")
 		}
 	}
+	for name, value := range map[string]string{"TERMS_URL": c.policies.Terms, "PRIVACY_URL": c.policies.Privacy, "REFUND_POLICY_URL": c.policies.Refunds} {
+		if value != "" && !isHTTPSURL(value) {
+			return c, errors.New(name + " must be an absolute https URL")
+		}
+	}
+	// Buyers must be able to read the terms they agree to before a managed charge.
+	if c.managedEnabled && !c.policies.Complete() {
+		return c, errors.New("MANAGED_BILLING_ENABLED requires TERMS_URL, PRIVACY_URL and REFUND_POLICY_URL")
+	}
 	for _, value := range strings.Split(os.Getenv("TRUSTED_PROXY_CIDRS"), ",") {
 		value = strings.TrimSpace(value)
 		if value == "" {
@@ -66,4 +83,9 @@ func loadConfig() (config, error) {
 		c.trustedProxies = append(c.trustedProxies, prefix)
 	}
 	return c, nil
+}
+
+func isHTTPSURL(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil
 }

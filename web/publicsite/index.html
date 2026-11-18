@@ -96,8 +96,8 @@
   </main>
   <footer class="site-footer">
     <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">M</span>MemberOS</a>
-    <nav aria-label="Footer"><a href="/app/">Open the app</a>{{if .BotURL}}<a href="{{.BotURL}}">Telegram bot</a>{{end}}<a href="#contact">Contact</a></nav>
-    <small>© 2026 MemberOS. Early access: paid terms will be published before launch.</small>
+    <nav aria-label="Footer"><a href="/app/">Open the app</a>{{if .BotURL}}<a href="{{.BotURL}}">Telegram bot</a>{{end}}<a href="#contact">Contact</a>{{with .Policies}}{{if .Terms}}<a href="{{.Terms}}" rel="noopener">Terms</a>{{end}}{{if .Privacy}}<a href="{{.Privacy}}" rel="noopener">Privacy</a>{{end}}{{if .Refunds}}<a href="{{.Refunds}}" rel="noopener">Refunds</a>{{end}}{{end}}</nav>
+    <small>© 2026 MemberOS.{{if not .Policies.Complete}} Early access: paid terms will be published before launch.{{end}}</small>
   </footer>
 </body>
 </html>

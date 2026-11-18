@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"memberos/internal/eventing"
 	"memberos/internal/telegram"
+	"memberos/web/publicsite"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -46,7 +47,7 @@ func (a *app) processCommand(ctx context.Context, tx pgx.Tx, botID, updateID int
 	case "/support", "/paysupport":
 		message = "To get help, tap the Open button, choose your community and tap Need help? Tell us the payment date and what went wrong."
 	case "/terms":
-		message = "Each community shows its seller, price, renewal terms and support contact before you pay. Tap the Open button, choose a community and open Billing and support."
+		message = "Each community shows its seller, price, renewal terms and support contact before you pay. Tap the Open button, choose a community and open Billing and support." + policyLines(a.cfg.policies)
 	default:
 		return eventing.IgnoredEvent("unsupported command")
 	}
@@ -191,4 +192,14 @@ func classifySendFailure(err error, attempts int) (status, reason string, delayS
 		return "pending", "Telegram could not be reached; message not sent", 15 << min(attempts, 8)
 	}
 	return "uncertain", "Telegram send outcome unknown; review before retrying", 0
+}
+
+func policyLines(p publicsite.Policies) string {
+	lines := ""
+	for _, item := range []struct{ label, url string }{{"Terms", p.Terms}, {"Privacy", p.Privacy}, {"Refunds", p.Refunds}} {
+		if item.url != "" {
+			lines += "\n" + item.label + ": " + item.url
+		}
+	}
+	return lines
 }

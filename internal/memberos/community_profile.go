@@ -32,7 +32,8 @@ func (a *app) community(w http.ResponseWriter, r *http.Request) {
 	}
 	response := map[string]any{"id": id, "title": title, "description": description, "seller": creator, "support_contact": support,
 		"rules": rules, "content_guide": guide, "category": category,
-		"mode": mode, "price_stars": price, "period_seconds": 2592000, "bot_admin_verified_at": verified}
+		"mode": mode, "price_stars": price, "period_seconds": 2592000, "bot_admin_verified_at": verified,
+		"policies": a.cfg.policies}
 	if mode == "native_channel" {
 		response["subscription_link"] = nativeLink
 	}

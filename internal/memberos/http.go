@@ -19,7 +19,7 @@ type app struct {
 
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /", publicsite.Handler(a.cfg.botUsername))
+	mux.Handle("GET /", publicsite.Handler(a.cfg.botUsername, a.cfg.policies))
 	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/", http.StatusTemporaryRedirect)
 	})

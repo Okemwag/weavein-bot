@@ -1,5 +1,5 @@
 import { tg, state, byId, uuid, node, el, notice, api, show, highlightTab, setAction, setBack, actionButton, field, submitForm, submitButton,
-  fold, confirmSheet, textSheet, openTelegramLink, date, stars } from './shared.js';
+  fold, confirmSheet, textSheet, openTelegramLink, policyLinks, date, stars } from './shared.js';
 import { describeMembership } from './member_status.js';
 import { loadMyMemberships } from './subscriber_home.js';
 
@@ -136,6 +136,8 @@ function renderPlanChoice(content, profile) {
       offer.description ? node('p', '', offer.description) : null, offer.benefits ? node('p', '', offer.benefits) : null)));
   }
   content.append(options);
+  const links = policyLinks(profile.policies);
+  if (links) content.append(el('div', 'stack', node('p', 'muted', 'By paying you agree to these terms:'), links));
 }
 
 function renderDetails(content, profile, status) {
@@ -147,7 +149,10 @@ function renderDetails(content, profile, status) {
   content.append(fold('Billing and support', false,
     el('div', 'group inset', kv('Sold by', profile.seller), kv('Support', profile.support_contact),
       kv('Billing', 'Every 30 days, in Telegram Stars')),
-    chosen?.terms ? node('p', '', chosen.terms) : null));
+    profile.mode === 'native_channel'
+      ? node('p', 'muted', 'Telegram bills this channel directly. To stop renewing, open Telegram Settings, then My Stars, and cancel the subscription there. You keep access until the paid period ends.')
+      : null,
+    chosen?.terms ? node('p', '', chosen.terms) : null, policyLinks(profile.policies)));
 }
 
 function renderManage(content) {
