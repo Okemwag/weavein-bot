@@ -16,7 +16,7 @@ func (a *app) onboarding(w http.ResponseWriter, r *http.Request) {
 	var workspaceID, name, support string
 	err = a.db.QueryRow(r.Context(), `SELECT w.id,w.name,c.support_contact FROM workspaces w
 		JOIN creators c ON c.id=w.creator_id JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.telegram_user_id=$2
-		WHERE w.id::text=$1`, r.PathValue("id"), userID).Scan(&workspaceID, &name, &support)
+		WHERE w.id=$1`, r.PathValue("id"), userID).Scan(&workspaceID, &name, &support)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return

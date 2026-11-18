@@ -2,8 +2,10 @@ package memberos
 
 import (
 	"errors"
+	"net/netip"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type config struct {
@@ -19,6 +21,7 @@ type config struct {
 	publicWebhookURL   string
 	botUsername        string
 	adminTelegramID    int64
+	trustedProxies     []netip.Prefix
 }
 
 func loadConfig() (config, error) {
@@ -50,6 +53,17 @@ func loadConfig() (config, error) {
 		if err != nil || c.adminTelegramID <= 0 {
 			return c, errors.New("MEMBEROS_ADMIN_TELEGRAM_ID must be a positive integer")
 		}
+	}
+	for _, value := range strings.Split(os.Getenv("TRUSTED_PROXY_CIDRS"), ",") {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return c, errors.New("TRUSTED_PROXY_CIDRS must be a comma-separated list of CIDR ranges")
+		}
+		c.trustedProxies = append(c.trustedProxies, prefix)
 	}
 	return c, nil
 }

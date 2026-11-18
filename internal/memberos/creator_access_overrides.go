@@ -100,7 +100,7 @@ func (a *app) creatorGrantOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(creator_id,subject_telegram_user_id,action,details)
- VALUES($1,$2,'access_override_granted',jsonb_build_object('override_id',$3,'community_id',$4,'expires_at',$5,'actor_id',$6))`,
+ VALUES($1,$2,'access_override_granted',jsonb_build_object('override_id',$3::uuid,'community_id',$4::uuid,'expires_at',$5::timestamptz,'actor_id',$6::bigint))`,
 		creator, input.TelegramUserID, id, community, input.ValidUntil, author)
 	if err != nil || tx.Commit(r.Context()) != nil {
 		http.Error(w, "database error", 500)
@@ -128,7 +128,7 @@ func (a *app) creatorRevokeOverride(w http.ResponseWriter, r *http.Request) {
 	var user int64
 	var creator string
 	err = tx.QueryRow(r.Context(), `SELECT o.telegram_user_id,c.creator_id FROM access_overrides o
- JOIN communities c ON c.id=o.community_id WHERE o.id::text=$1 AND o.community_id=$2 AND o.active=true
+ JOIN communities c ON c.id=o.community_id WHERE o.id=$1 AND o.community_id=$2 AND o.active=true
  FOR UPDATE OF o`, r.PathValue("override_id"), community).Scan(&user, &creator)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
@@ -142,7 +142,7 @@ func (a *app) creatorRevokeOverride(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", 500)
 		return
 	}
-	_, err = tx.Exec(r.Context(), `UPDATE access_overrides SET active=false,revoked_at=now() WHERE id::text=$1`, r.PathValue("override_id"))
+	_, err = tx.Exec(r.Context(), `UPDATE access_overrides SET active=false,revoked_at=now() WHERE id=$1`, r.PathValue("override_id"))
 	if err != nil {
 		http.Error(w, "database error", 500)
 		return
@@ -154,7 +154,7 @@ func (a *app) creatorRevokeOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(creator_id,subject_telegram_user_id,action,details)
- VALUES($1,$2,'access_override_revoked',jsonb_build_object('override_id',$3,'community_id',$4,'actor_id',$5))`,
+ VALUES($1,$2,'access_override_revoked',jsonb_build_object('override_id',$3::uuid,'community_id',$4::uuid,'actor_id',$5::bigint))`,
 		creator, user, r.PathValue("override_id"), community, author)
 	if err != nil || tx.Commit(r.Context()) != nil {
 		http.Error(w, "database error", 500)

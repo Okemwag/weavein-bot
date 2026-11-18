@@ -9,6 +9,7 @@ import (
 )
 
 func (s Service) RunReconciliation(ctx context.Context) {
+	s.awaitDeliveryBacklog(ctx)
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -26,19 +27,21 @@ func (s Service) RunReconciliation(ctx context.Context) {
 // ReconcileKnown checks only identities already known to MemberOS. Telegram does
 // not expose an unrestricted member list through this bot API.
 func (s Service) ReconcileKnown(ctx context.Context) error {
-	rows, err := s.DB.Query(ctx, `SELECT id,telegram_chat_id FROM communities
-        WHERE billing_mode='managed_bot' AND status='published' AND billing_bot_id=$1`, s.BotID)
+	rows, err := s.DB.Query(ctx, `SELECT id,telegram_chat_id,billing_mode FROM communities
+		WHERE status='published' AND (billing_mode='native_channel'
+		OR (billing_mode='managed_bot' AND billing_bot_id=$1))`, s.BotID)
 	if err != nil {
 		return err
 	}
 	type community struct {
 		id   string
 		chat int64
+		mode string
 	}
 	var communities []community
 	for rows.Next() {
 		var c community
-		if err := rows.Scan(&c.id, &c.chat); err != nil {
+		if err := rows.Scan(&c.id, &c.chat, &c.mode); err != nil {
 			rows.Close()
 			return err
 		}
@@ -51,7 +54,8 @@ func (s Service) ReconcileKnown(ctx context.Context) error {
 	rows.Close()
 	for _, c := range communities {
 		bot, err := s.Telegram.GetChatMember(ctx, c.chat, s.BotID)
-		if err != nil || bot.Status != "administrator" || !bot.CanInviteUsers || !bot.CanRestrictMembers {
+		if err != nil || bot.Status != "administrator" || !bot.CanInviteUsers ||
+			(c.mode == "managed_bot" && !bot.CanRestrictMembers) {
 			reason := "bot lacks required permissions"
 			if err != nil {
 				reason = err.Error()
@@ -67,6 +71,9 @@ func (s Service) ReconcileKnown(ctx context.Context) error {
 		}
 		if err := s.setCommunityHealth(ctx, c.id, "healthy", ""); err != nil {
 			return err
+		}
+		if c.mode == "native_channel" {
+			continue
 		}
 		members, err := s.DB.Query(ctx, `WITH known AS (
             SELECT telegram_user_id FROM entitlements WHERE community_id=$1
@@ -108,12 +115,16 @@ func (s Service) ReconcileKnown(ctx context.Context) error {
 			if member.Status == "creator" || member.Status == "administrator" {
 				continue
 			}
-			var entitled, pending bool
-			err = s.DB.QueryRow(ctx, `SELECT (EXISTS(SELECT 1 FROM entitlements WHERE community_id=$1 AND telegram_user_id=$2
-                AND status='active' AND valid_until>now()) OR EXISTS(SELECT 1 FROM access_overrides
-                WHERE community_id=$1 AND telegram_user_id=$2 AND active=true AND valid_until>now())),
+			// Only people who once held paid or granted access can lapse. Anyone else
+			// present was already in the chat before it was connected, because new
+			// members must pass a join request. They show up as access mismatches for
+			// the creator to review and are never removed automatically.
+			var entitled, pending, hadAccess bool
+			err = s.DB.QueryRow(ctx, `SELECT member_has_access($1,$2),
                 EXISTS(SELECT 1 FROM join_requests WHERE community_id=$1
-                AND telegram_user_id=$2 AND status='pending')`, c.id, user).Scan(&entitled, &pending)
+                AND telegram_user_id=$2 AND status='pending'),
+                EXISTS(SELECT 1 FROM subscriptions WHERE community_id=$1 AND telegram_user_id=$2)
+                OR EXISTS(SELECT 1 FROM access_overrides WHERE community_id=$1 AND telegram_user_id=$2)`, c.id, user).Scan(&entitled, &pending, &hadAccess)
 			if err != nil {
 				return err
 			}
@@ -131,7 +142,7 @@ func (s Service) ReconcileKnown(ctx context.Context) error {
 				}
 			}
 			action := ""
-			if !entitled && present {
+			if !entitled && present && hadAccess {
 				action = "remove"
 			}
 			if entitled && pending && !present {

@@ -27,10 +27,7 @@ type memberRow struct {
 func (a *app) queryCreatorMembers(ctx context.Context, communityID, search, status, planID string, limit, offset int) ([]memberRow, error) {
 	rows, err := a.db.Query(ctx, `SELECT m.telegram_user_id,m.first_name,m.username,ao.member_status,ao.observed_at,
         s.id,s.state,s.paid_through,s.first_paid_at,p.name,p.id,
-        EXISTS(SELECT 1 FROM entitlements e WHERE e.community_id=c.id AND e.telegram_user_id=m.telegram_user_id
-			AND e.status='active' AND e.valid_until>now())
-        OR EXISTS(SELECT 1 FROM access_overrides o WHERE o.community_id=c.id
-            AND o.telegram_user_id=m.telegram_user_id AND o.active=true AND o.valid_until>now())
+        member_has_access(c.id,m.telegram_user_id)
         FROM communities c JOIN members m ON m.creator_id=c.creator_id
         LEFT JOIN access_observations ao ON ao.community_id=c.id AND ao.telegram_user_id=m.telegram_user_id
         LEFT JOIN LATERAL (SELECT id,state,paid_through,first_paid_at,plan_version_id FROM subscriptions

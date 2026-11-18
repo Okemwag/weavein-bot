@@ -24,7 +24,7 @@ func (a *app) creatorSaaSAccount(w http.ResponseWriter, r *http.Request) {
 		sa.community_limit,sa.managed_billing_allowed,sa.updated_at,
 		(SELECT count(*) FROM communities c WHERE c.workspace_id=sa.workspace_id AND c.status<>'archived')
 		FROM saas_accounts sa JOIN workspace_members wm ON wm.workspace_id=sa.workspace_id
-		WHERE sa.workspace_id::text=$1 AND wm.telegram_user_id=$2`, r.PathValue("id"), user).
+		WHERE sa.workspace_id=$1 AND wm.telegram_user_id=$2`, r.PathValue("id"), user).
 		Scan(&workspace, &plan, &status, &limit, &managed, &updated, &used)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
@@ -69,7 +69,7 @@ func (a *app) adminSetSaaSAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
 	var workspace string
-	err = tx.QueryRow(r.Context(), `SELECT id FROM workspaces WHERE id::text=$1 FOR UPDATE`, r.PathValue("id")).Scan(&workspace)
+	err = tx.QueryRow(r.Context(), `SELECT id FROM workspaces WHERE id=$1 FOR UPDATE`, r.PathValue("id")).Scan(&workspace)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -97,8 +97,8 @@ func (a *app) adminSetSaaSAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
-		VALUES($1,'saas_account_changed',jsonb_build_object('workspace_id',$2,'plan',$3,'status',$4,
-		'community_limit',$5,'managed_billing_allowed',$6,'reason',$7))`, operator, workspace, input.Plan, input.Status,
+		VALUES($1,'saas_account_changed',jsonb_build_object('workspace_id',$2::uuid,'plan',$3::text,'status',$4::text,
+		'community_limit',$5::integer,'managed_billing_allowed',$6::boolean,'reason',$7::text))`, operator, workspace, input.Plan, input.Status,
 		input.CommunityLimit, input.ManagedBillingAllowed, input.Reason)
 	if err != nil {
 		http.Error(w, "database error", 500)

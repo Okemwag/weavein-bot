@@ -66,7 +66,7 @@ func (a *app) updateCommunityOnboarding(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(creator_id,subject_telegram_user_id,action,details)
-		VALUES($1,$2,'community_guidance_updated',jsonb_build_object('community_id',$3))`, creator, access.User, access.ID)
+		VALUES($1,$2,'community_guidance_updated',jsonb_build_object('community_id',$3::uuid))`, creator, access.User, access.ID)
 	if err != nil {
 		http.Error(w, "database error", 500)
 		return

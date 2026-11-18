@@ -503,7 +503,7 @@ These are still open. A related P0 table or route does not imply that a growth o
 
 1. Choose and verify the first production seller/recipient model with a creator-owned test bot or native channel; run a complete Telegram test-environment purchase and refund.
 2. Validate Studio workspace, chat and plan onboarding against PostgreSQL and Telegram; the UI and APIs are implemented but tests were deferred.
-3. Validate the new operations migrations and run payment, access, retry, and refund scenarios against PostgreSQL and Telegram; then add pagination and proactive permission-loss alerts.
+3. Validate the new reliability migrations and run payment, access, retry, refund, notification-uncertainty, and pre-checkout interruption scenarios against PostgreSQL and Telegram; then add pagination and verify proactive permission-loss alerts live.
 4. Publish legal, support and refund terms; verify `/paysupport`, tickets, and controlled refund decisions with a real bot.
 5. Finish creator CRM, internal operations, backups, staging, security controls, and pilot acceptance gates.
 

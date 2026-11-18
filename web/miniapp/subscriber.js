@@ -1,303 +1,285 @@
-import { tg, state, byId, uuid, node, notice, api, show, openTelegramLink, date, displayStatus } from './shared.js';
+import { tg, state, byId, uuid, node, el, notice, api, show, highlightTab, setAction, setBack, actionButton, field, submitForm, submitButton,
+  fold, confirmSheet, textSheet, openTelegramLink, date, stars } from './shared.js';
+import { describeMembership } from './member_status.js';
 import { loadMyMemberships } from './subscriber_home.js';
 
 function renderDiscovery() {
+  const tools = byId('community-tools');
+  tools.replaceChildren();
+  if (state.communities.length > 5) {
+    const search = node('input', 'input search'); search.type = 'search'; search.placeholder = 'Search communities';
+    search.setAttribute('aria-label', 'Search communities');
+    search.addEventListener('input', () => drawCommunities(search.value.trim().toLowerCase()));
+    tools.append(search);
+  }
+  drawCommunities('');
+}
+
+function drawCommunities(query) {
   const list = byId('community-list');
   list.replaceChildren();
-  byId('community-count').textContent = `${state.communities.length} available`;
   if (!state.communities.length) {
-    list.append(node('div', 'empty', 'No communities have been published yet. Check back soon.'));
+    list.append(el('div', 'empty', node('strong', '', 'No communities yet'), node('span', '', 'New communities appear here as soon as they open. Please check back soon.')));
     return;
   }
-  for (const community of state.communities) {
-    const card = node('article', 'card');
-    const top = node('div', 'card-top');
-    const copy = node('div');
-    copy.append(node('div', 'eyebrow', community.seller), node('h3', '', community.title), node('p', '', community.description || 'A private member community.'));
-    top.append(copy, node('div', 'avatar', (community.title || 'M').slice(0, 1).toUpperCase()));
-    const footer = node('div', 'card-footer');
-    const price = node('div', 'price', `${community.price_stars} Stars`);
-    price.append(node('small', '', ' / 30 days'));
-    const button = node('button', 'button secondary', 'Explore');
-    button.type = 'button';
-    button.addEventListener('click', () => selectCommunity(community.id));
-    footer.append(price, button);
-    card.append(top, footer);
+  const matches = state.communities.filter((item) => !query || `${item.title} ${item.seller} ${item.description}`.toLowerCase().includes(query));
+  if (!matches.length) list.append(node('div', 'empty', `Nothing matches “${query}”.`));
+  for (const community of matches) {
+    const card = node('button', 'community-card'); card.type = 'button';
+    card.addEventListener('click', () => selectCommunity(community.id, 'discover'));
+    card.append(node('span', 'avatar', (community.title || 'M').slice(0, 1).toUpperCase()),
+      el('span', 'grow', node('strong', '', community.title), node('span', 'by', `By ${community.seller}`),
+        community.description ? node('span', 'desc', community.description) : null,
+        node('span', 'price', `${stars(community.price_stars)} / month`)));
     list.append(card);
   }
 }
 
-async function selectCommunity(id) {
+async function selectCommunity(id, from = state.view) {
   if (!uuid.test(id)) return;
-  state.selected = id;
-  state.profile = null;
-  state.plans = [];
-  state.selectedPlan = null;
-  state.membership = null;
-  state.checkout = null;
+  Object.assign(state, { selected: id, profile: null, plans: [], selectedPlan: null, membership: null, checkout: null, returnTo: from === 'membership' ? 'membership' : 'discover' });
   show('membership');
-  byId('membership-title').textContent = 'Loading community…';
-  byId('membership-description').textContent = '';
-  byId('membership-content').replaceChildren();
+  highlightTab(state.returnTo);
+  byId('membership-head').hidden = true;
+  byId('membership-content').replaceChildren(node('p', 'muted', 'Loading community…'));
+  drawBack();
   try {
     state.profile = await api(`/api/v1/communities/${encodeURIComponent(id)}`);
     state.plans = (await api(`/api/v1/communities/${encodeURIComponent(id)}/plans`)).plans || [];
     state.selectedPlan = state.plans[0]?.id || null;
-    if (state.token && !state.notificationPrefs) {
-      try { state.notificationPrefs = await api('/api/v1/me/notification-preferences'); }
-      catch { state.notificationPrefs = null; }
-    }
     if (state.token) {
-      await Promise.all([refreshMembership(), refreshCheckout()]);
+      if (!state.notificationPrefs) state.notificationPrefs = await api('/api/v1/me/notification-preferences').catch(() => null);
+      await Promise.all([loadMembership(), loadCheckout()]);
     }
-    else renderMembership();
-  } catch (error) { notice(error.message, true); }
+    renderMembership();
+  } catch (error) {
+    byId('membership-content').replaceChildren(node('div', 'empty', error.message));
+  }
+}
+
+function leaveCommunity() {
+  Object.assign(state, { selected: null, profile: null, membership: null, checkout: null });
+  if (state.returnTo === 'membership') { show('membership'); loadMyMemberships(selectCommunity); }
+  else show('discover');
+}
+
+function drawBack() {
+  const label = state.returnTo === 'membership' ? 'My memberships' : 'Explore';
+  byId('membership-back').replaceChildren(setBack(leaveCommunity, label));
+}
+
+async function loadMembership() {
+  try { state.membership = await api(`/api/v1/me/membership?community_id=${encodeURIComponent(state.selected)}`); }
+  catch (error) { notice(error.message, true); }
+}
+
+async function loadCheckout() {
+  try { state.checkout = await api(`/api/v1/me/checkout-status?community_id=${encodeURIComponent(state.selected)}`); }
+  catch { state.checkout = null; }
 }
 
 async function refreshMembership() {
   if (!state.selected || !state.token) return;
-  try {
-    state.membership = await api(`/api/v1/me/membership?community_id=${encodeURIComponent(state.selected)}`);
-    renderMembership();
-  } catch (error) { notice(error.message, true); renderMembership(); }
-}
-
-async function refreshCheckout() {
-  if (!state.selected || !state.token) return;
-  try {
-    state.checkout = await api('/api/v1/me/checkout-status?community_id=' + encodeURIComponent(state.selected));
-    renderMembership();
-  } catch (error) { notice(error.message, true); }
-}
-
-function row(label, value) {
-  const outer = node('div', 'row');
-  outer.append(node('span', 'muted', label), node('span', 'value', value));
-  return outer;
+  await Promise.all([loadMembership(), loadCheckout()]);
+  renderMembership();
 }
 
 function renderMembership() {
   const profile = state.profile;
-  if (!profile) { loadMyMemberships(selectCommunity); return; }
-  byId('membership-title').textContent = profile.title;
-  byId('membership-description').textContent = profile.description || `A private community by ${profile.seller}.`;
+  if (!state.selected || !profile) { loadMyMemberships(selectCommunity); return; }
+  byId('membership-head').hidden = true;
+  drawBack();
+  const status = describeMembership(profile, state.membership);
   const content = byId('membership-content');
-  content.replaceChildren();
-  const allMemberships = node('button', 'text-button', '← All my memberships');
-  allMemberships.type = 'button';
-  allMemberships.addEventListener('click', () => {
-    state.profile = null; state.selected = null; state.membership = null; state.checkout = null;
-    loadMyMemberships(selectCommunity);
-  });
-  content.append(allMemberships);
-  if (profile.category) content.append(node('p', 'eyebrow', profile.category));
-  if (profile.rules) {
-    const rules = node('div', 'detail-card');
-    rules.append(node('div', 'label', 'Community rules'), node('p', '', profile.rules)); content.append(rules);
+  content.replaceChildren(communityHeader(profile));
+  if (status.title) content.append(statusCard(status));
+  const unfinished = status.action === 'subscribe' && state.checkout?.status === 'pending' && state.checkout.invoice_url;
+  if (unfinished) {
+    content.append(el('div', 'card tone-warn', node('h2', '', 'You started paying'), node('p', '', 'Your invoice is still open. Finish paying, or choose a plan below to start again.'),
+      actionButton('Finish paying', 'button secondary full', () => openInvoice(state.checkout.invoice_url))));
   }
-  if (profile.content_guide) {
-    const guide = node('div', 'detail-card');
-    guide.append(node('div', 'label', 'Where to begin'), node('p', '', profile.content_guide)); content.append(guide);
-  }
+  if (status.action === 'subscribe') renderPlanChoice(content, profile);
+  renderDetails(content, profile, status);
+  if (state.token) content.append(supportForm());
+  // Cancelling stays last on the page, away from the main action.
+  if (state.token && profile.mode === 'managed_bot' && state.membership?.subscription_id) renderManage(content);
+  setAction(mainAction(profile, status));
+}
 
+function communityHeader(profile) {
+  return el('div', 'stack',
+    el('div', 'community-header', node('span', 'avatar large', (profile.title || 'M').slice(0, 1).toUpperCase()),
+      el('div', 'grow', node('h1', '', profile.title), node('span', 'muted', `By ${profile.seller}${profile.category ? ` · ${profile.category}` : ''}`))),
+    profile.description ? node('p', 'lead', profile.description) : null);
+}
+
+function statusCard(status) {
+  const card = el('div', `card tone-${status.tone}`, node('h2', '', status.title), node('p', '', status.detail));
+  if (status.canRecheck) card.append(actionButton('I already joined', 'text-button', refreshMembership));
+  return card;
+}
+
+function renderPlanChoice(content, profile) {
+  if (profile.mode !== 'managed_bot') return;
+  if (!state.plans.length) {
+    content.append(node('div', 'empty', "This community isn't taking new members right now. Please check back soon."));
+    return;
+  }
+  content.append(el('div', 'section-title', node('h2', '', state.plans.length > 1 ? 'Choose a plan' : 'Your plan')));
+  const options = node('div', 'stack');
   for (const offer of state.plans) {
-    const plan = node('div', 'detail-card');
-    plan.append(node('div', 'label', offer.name));
-    const price = node('div', 'value', `${offer.price_stars} Stars`);
-    price.append(node('small', '', ' / 30 days, recurring'));
-    plan.append(price);
-    if (offer.description) plan.append(node('p', '', offer.description));
-    if (offer.benefits) plan.append(row('Includes', offer.benefits));
-    plan.append(row('Seller', profile.seller), row('Support', profile.support_contact), node('p', '', offer.terms));
-    if (profile.mode === 'managed_bot' && state.plans.length > 1) {
-      const choose = node('button', `button ${offer.id === state.selectedPlan ? '' : 'secondary'}`, offer.id === state.selectedPlan ? 'Selected plan' : 'Choose this plan');
-      choose.type = 'button';
-      choose.addEventListener('click', () => { state.selectedPlan = offer.id; renderMembership(); });
-      plan.append(choose);
-    }
-    content.append(plan);
+    const radio = node('input'); radio.type = 'radio'; radio.name = 'plan'; radio.value = offer.id;
+    radio.checked = offer.id === state.selectedPlan;
+    radio.addEventListener('change', () => { state.selectedPlan = offer.id; setAction(mainAction(profile, describeMembership(profile, state.membership))); });
+    const amount = el('span', 'amount', stars(offer.price_stars), node('small', '', ' / month'));
+    options.append(el('label', 'option', radio, el('span', 'grow', el('span', 'head', node('span', '', offer.name), amount),
+      offer.description ? node('p', '', offer.description) : null, offer.benefits ? node('p', '', offer.benefits) : null)));
   }
-  if (!state.plans.length) content.append(node('div', 'empty', 'No membership plan is available for new subscriptions.'));
+  content.append(options);
+}
 
+function renderDetails(content, profile, status) {
+  const isMember = status.action === 'open' || status.action === 'join';
+  if (profile.content_guide) content.append(fold('Where to begin', isMember, node('p', '', profile.content_guide)));
+  if (profile.rules) content.append(fold('Community rules', false, node('p', '', profile.rules)));
+  const chosen = state.plans.find((item) => item.id === state.selectedPlan);
+  const kv = (label, value) => el('div', 'kv', node('span', '', label), node('span', '', value));
+  content.append(fold('Billing and support', false,
+    el('div', 'group inset', kv('Sold by', profile.seller), kv('Support', profile.support_contact),
+      kv('Billing', 'Every 30 days, in Telegram Stars')),
+    chosen?.terms ? node('p', '', chosen.terms) : null));
+}
+
+function renderManage(content) {
   const membership = state.membership;
-  const status = node('div', 'detail-card');
-  status.append(node('div', 'label', 'Your membership'));
-  status.append(node('span', `badge ${membership?.billing_status === 'payment_failed' ? 'warn' : ''}`,
-    membership ? displayStatus(profile.mode === 'managed_bot' ? membership.billing_status : membership.access_status) : 'Open in Telegram to view status'));
-  if (membership) {
-    status.append(row('Telegram access', displayStatus(membership.access_status)));
-    if (profile.mode === 'managed_bot') {
-      status.append(row('Paid through', date(membership.paid_through)));
-      status.append(row('Auto renewal', membership.auto_renew_state === 'off' ? 'Off' : membership.auto_renew_state === 'on' ? 'On' : 'Unknown'));
-    } else if (membership.subscription_until) {
-      status.append(row('Observed expiry', date(membership.subscription_until)));
-    }
-    status.append(row('Access checked', membership.observed_at ? date(membership.observed_at) : 'Not yet observed'));
-    if (!membership.fresh) status.append(node('p', '', 'Telegram is temporarily unavailable. Access shown here may be out of date.'));
+  const group = node('div', 'group');
+  if (state.notificationPrefs) {
+    const reminder = node('input'); reminder.type = 'checkbox'; reminder.checked = state.notificationPrefs.reminders_enabled;
+    reminder.addEventListener('change', async () => {
+      try {
+        state.notificationPrefs = await api('/api/v1/me/notification-preferences', { method: 'PATCH', body: JSON.stringify({ reminders_enabled: reminder.checked }) });
+        notice(reminder.checked ? "We'll remind you before your access ends." : 'Reminders are off.');
+      } catch (error) { reminder.checked = !reminder.checked; notice(error.message, true); }
+    });
+    group.append(el('label', 'toggle', node('span', '', 'Remind me before my access ends'), reminder));
   }
-  content.append(status);
-  if (profile.mode === 'managed_bot' && state.checkout && state.checkout.status !== 'none') {
-    const checkout = node('div', 'detail-card');
-    const current = state.checkout.status;
-    checkout.append(node('div', 'label', 'Latest checkout'));
-    const copy = {
-      pending: 'Payment is pending. Complete the Telegram invoice or reopen it below.',
-      paid: 'Payment confirmed by Telegram. Your membership is being updated.',
-      failed: 'The invoice could not be prepared. Start a new checkout.',
-      expired: 'This checkout expired. Start a new checkout.',
-    };
-    checkout.append(node('p', '', copy[current] || 'Check membership status for the latest outcome.'));
-    if (current === 'pending' && state.checkout.invoice_url) {
-      const reopen = node('button', 'button secondary full', 'Reopen invoice'); reopen.type = 'button';
-      reopen.addEventListener('click', () => openTelegramLink(state.checkout.invoice_url));
-      checkout.append(reopen);
-    }
-    content.append(checkout);
+  const history = node('div', 'group');
+  history.hidden = true;
+  const loadHistory = async () => {
+    const data = await api(`/api/v1/me/payments?community_id=${encodeURIComponent(state.selected)}`);
+    drawPayments(history, data.payments, loadHistory);
+  };
+  const historyRow = actionButton('', 'list-row', loadHistory);
+  historyRow.append(node('span', 'grow', 'Payments and refunds'), node('span', 'chevron', '›'));
+  group.append(historyRow);
+  content.append(el('div', 'section-title', node('h2', '', 'Manage')), group, history);
+  const renewing = membership.renewing_subscriptions || [];
+  if (renewing.length > 1) {
+    content.append(node('div', 'card tone-warn', `You have ${renewing.length} renewals running for this community. Turn off the ones you don't need, and ask for a refund of any extra payment under Payments and refunds.`));
   }
+  renewing.forEach((subscription, index) => {
+    const label = renewing.length > 1 ? `Cancel renewal ${index + 1} (paid until ${date(subscription.paid_through)})` : 'Cancel renewal';
+    content.append(actionButton(label, 'button danger full', () => cancelRenewal(subscription)));
+  });
+}
 
-  const actions = node('div', 'actions');
-  if (profile.mode === 'native_channel') {
-    if (['member', 'administrator', 'creator'].includes(membership?.access_status)) {
-      actions.append(node('div', 'empty', 'Your channel access is active. Open the channel from your Telegram chat list.'));
-    } else {
-      const subscribe = node('button', 'button full', 'Subscribe in Telegram');
-      subscribe.type = 'button';
-      subscribe.addEventListener('click', () => openTelegramLink(profile.subscription_link));
-      actions.append(subscribe);
+function drawPayments(container, payments, reload) {
+  container.hidden = false;
+  container.replaceChildren();
+  if (!payments.length) { container.append(el('div', 'list-row', node('span', 'sub', 'No payments yet.'))); return; }
+  for (const payment of payments) {
+    const row = el('div', 'list-row', el('span', 'grow', node('span', 'title', stars(payment.amount_stars)), node('span', 'sub', date(payment.paid_at))));
+    if (payment.refunded_at) row.append(node('span', 'pill', 'Refunded'));
+    else if (payment.refund_requested) row.append(node('span', 'pill warn', 'Refund requested'));
+    else {
+      row.append(actionButton('Ask for a refund', 'button ghost small', async () => {
+        const reason = await textSheet({ title: 'Ask for a refund', label: 'Why are you asking for a refund?',
+          body: `For your ${stars(payment.amount_stars)} payment on ${date(payment.paid_at)}. If it's approved, you'll get a message and your Stars back.`,
+          confirm: 'Send request' });
+        if (!reason) return;
+        await api('/api/v1/me/refund-requests', { method: 'POST', body: JSON.stringify({ payment_id: payment.id, reason }) });
+        notice('Refund request sent.');
+        await reload();
+      }));
     }
-  } else if (membership?.entitled) {
-    const join = node('button', 'button full', ['member', 'administrator', 'creator'].includes(membership.access_status) ? 'Open community' : 'Request access');
-    join.type = 'button';
-    join.addEventListener('click', () => openTelegramLink(membership.join_link));
-    actions.append(join);
-    if (membership.auto_renew_state === 'on' && membership.subscription_id) {
-      const cancel = node('button', 'button danger full', 'Turn off renewal');
-      cancel.type = 'button';
-      cancel.addEventListener('click', cancelRenewal);
-      actions.append(cancel);
-    }
-  } else {
-    const subscribe = node('button', 'button full', 'Subscribe with Stars');
-    subscribe.type = 'button';
-    subscribe.disabled = !state.token || !state.selectedPlan;
-    subscribe.addEventListener('click', beginCheckout);
-    actions.append(subscribe);
+    container.append(row);
   }
-  if (state.token) {
-    const refresh = node('button', 'button ghost full', 'Refresh membership');
-    refresh.type = 'button';
-    refresh.addEventListener('click', refreshMembership);
-    actions.append(refresh);
-  } else {
-    actions.append(node('div', 'empty', 'Open this Mini App in Telegram to verify your identity and manage membership.'));
+}
+
+function supportForm() {
+  const form = node('form', 'form');
+  const kind = node('select', 'input'); kind.name = 'kind'; kind.setAttribute('aria-label', 'What do you need help with?');
+  for (const [value, label] of [['access', "I can't get into the community"], ['payment', 'I have a question about a payment'], ['refund', 'I want a refund'], ['other', 'Something else']]) {
+    const option = node('option', '', label); option.value = value; kind.append(option);
   }
-  content.append(actions);
-  if (state.token) {
-    const support = node('div', 'detail-card');
-    support.append(node('div', 'label', 'Need help?'), node('p', '', 'Report a payment or access issue to the community team.'));
-    const form = node('form');
-    const kind = node('select', 'select');
-    for (const [value, label] of [['access', 'Missing access'], ['payment', 'Payment question'], ['refund', 'Refund request'], ['other', 'Other']]) {
-      const option = node('option', '', label); option.value = value; kind.append(option);
-    }
-    const description = node('textarea', 'input');
-    description.placeholder = 'Describe what happened (at least 10 characters)';
-    description.required = true; description.minLength = 10; description.maxLength = 2000;
-    const submit = node('button', 'button secondary full', 'Send support request'); submit.type = 'submit';
-    form.append(kind, description, submit);
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault(); submit.disabled = true;
-      try {
-        await api('/api/v1/me/support-tickets', { method: 'POST', body: JSON.stringify({ community_id: state.selected, kind: kind.value, description: description.value }) });
-        description.value = ''; notice('Support request received.');
-      } catch (error) { notice(error.message, true); }
-      finally { submit.disabled = false; }
-    });
-    support.append(form); content.append(support);
-    if (profile.mode === 'managed_bot' && state.notificationPrefs) {
-      const preference = node('label', 'row');
-      const reminder = node('input'); reminder.type = 'checkbox';
-      reminder.checked = state.notificationPrefs.reminders_enabled;
-      reminder.addEventListener('change', async () => {
-        try {
-          state.notificationPrefs = await api('/api/v1/me/notification-preferences',
-            { method: 'PATCH', body: JSON.stringify({ reminders_enabled: reminder.checked }) });
-          notice('Reminder preference saved.');
-        } catch (error) { reminder.checked = !reminder.checked; notice(error.message, true); }
-      });
-      preference.append(node('span', '', 'Remind me before paid access expires'), reminder);
-      content.append(preference);
-    }
-    if (profile.mode === 'managed_bot' && (membership?.subscription_id || membership?.billing_status)) {
-    const history = node('div', 'detail-card');
-    const showPayments = node('button', 'button secondary full', 'View payments and refunds');
-    showPayments.type = 'button';
-    const paymentList = node('div', 'member-list');
-    showPayments.addEventListener('click', async () => {
-      try {
-        const data = await api(`/api/v1/me/payments?community_id=${encodeURIComponent(state.selected)}`);
-        paymentList.replaceChildren();
-        if (!data.payments.length) paymentList.append(node('p', 'muted', 'No verified payments recorded yet.'));
-        for (const payment of data.payments) {
-          const item = node('div', 'member-row');
-          item.append(node('strong', '', `${payment.amount_stars} Stars · ${date(payment.paid_at)}`));
-          if (payment.refunded_at) item.append(node('small', '', 'Refund confirmed'));
-          else if (payment.refund_requested) item.append(node('small', '', 'Refund under review'));
-          else {
-            const request = node('button', 'button secondary', 'Request refund review');
-            request.type = 'button';
-            request.addEventListener('click', async () => {
-              const reason = window.prompt('Why are you requesting a refund? Please include at least 10 characters.');
-              if (!reason) return;
-              try {
-                await api('/api/v1/me/refund-requests', { method: 'POST', body: JSON.stringify({ payment_id: payment.id, reason }) });
-                notice('Refund request received for review.'); showPayments.click();
-              } catch (error) { notice(error.message, true); }
-            });
-            item.append(request);
-          }
-          paymentList.append(item);
-        }
-      } catch (error) { notice(error.message, true); }
-    });
-    history.append(showPayments, paymentList); content.append(history);
-    }
+  form.append(kind, field('Tell us what happened', 'description', { type: 'textarea', minLength: 10, maxLength: 2000, placeholder: 'Include the date and what you expected to happen.' }),
+    submitButton('Send to support', 'button secondary full'));
+  submitForm(form, async (values) => {
+    await api('/api/v1/me/support-tickets', { method: 'POST', body: JSON.stringify({ community_id: state.selected, ...values }) });
+    form.reset();
+    notice('Thanks. Your message was sent to the community team.');
+  });
+  return fold('Need help?', false, form);
+}
+
+function mainAction(profile, status) {
+  if (!state.token) {
+    return { label: 'Open in Telegram to join', disabled: true, onClick: () => {}, note: 'Joining needs your Telegram account.' };
+  }
+  if (status.action === 'join' || status.action === 'open') {
+    return { label: status.action === 'join' ? 'Join the community' : 'Open the community', onClick: () => openTelegramLink(state.membership.join_link) };
+  }
+  if (status.action !== 'subscribe') return null;
+  if (profile.mode !== 'managed_bot') {
+    return { label: `Join on Telegram for ${stars(profile.price_stars)}`, note: 'Renews every 30 days. Cancel anytime in Telegram.', onClick: () => openTelegramLink(profile.subscription_link) };
+  }
+  const plan = state.plans.find((item) => item.id === state.selectedPlan);
+  if (!plan) return null;
+  return { label: `Join for ${stars(plan.price_stars)}`, note: 'Renews every 30 days. Cancel anytime.', onClick: beginCheckout };
+}
+
+async function requestMessagePermission() {
+  // Without this permission Telegram blocks payment and access messages.
+  if (tg?.requestWriteAccess && !tg.initDataUnsafe?.user?.allows_write_to_pm) {
+    await new Promise((resolve) => tg.requestWriteAccess(resolve));
   }
 }
 
 async function beginCheckout() {
   if (!state.token || !state.selected || !state.selectedPlan) return;
-  notice('Preparing your Telegram invoice…');
-  try {
-    const checkout = await api('/api/v1/checkouts', { method: 'POST', body: JSON.stringify({ community_id: state.selected, plan_id: state.selectedPlan }) });
-    state.checkout = { ...checkout, status: 'pending' };
-    renderMembership();
-    notice('Complete payment in Telegram. Access will appear after payment confirmation.');
-    if (!tg?.openInvoice) { openTelegramLink(checkout.invoice_url); return; }
-    tg.openInvoice(checkout.invoice_url, async () => {
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        await refreshMembership();
-        await refreshCheckout();
-        if (state.membership?.entitled) { notice('Payment confirmed. You can now request access.'); return; }
+  await requestMessagePermission();
+  const checkout = await api('/api/v1/checkouts', { method: 'POST', body: JSON.stringify({ community_id: state.selected, plan_id: state.selectedPlan }) });
+  state.checkout = { ...checkout, status: 'pending' };
+  openInvoice(checkout.invoice_url);
+}
+
+function openInvoice(link) {
+  if (!tg?.openInvoice) { openTelegramLink(link); return; }
+  tg.openInvoice(link, async (outcome) => {
+    if (outcome === 'cancelled') { notice("Payment cancelled. You haven't been charged."); await refreshMembership(); return; }
+    if (outcome === 'failed') { notice('The payment did not go through. Please try again.', true); await refreshMembership(); return; }
+    notice('Confirming your payment…');
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await refreshMembership();
+      if (state.membership?.entitled) {
+        tg.HapticFeedback?.notificationOccurred?.('success');
+        notice("Payment confirmed. You're almost in.");
+        return;
       }
-      notice('Payment is still being confirmed. Refresh membership shortly.');
-    });
-  } catch (error) { notice(error.message, true); }
+    }
+    notice('Telegram is still confirming your payment. Check back in a moment.');
+  });
 }
 
-async function cancelRenewal() {
-  const id = state.membership?.subscription_id;
-  if (!id) return;
-  const confirmed = tg?.showConfirm ? await new Promise((resolve) => tg.showConfirm('Turn off renewal? You keep access until the end of your paid period.', resolve))
-    : window.confirm('Turn off renewal? You keep access until the end of your paid period.');
+async function cancelRenewal(subscription) {
+  const confirmed = await confirmSheet({ title: 'Cancel your renewal?',
+    body: `You'll keep access until ${date(subscription.paid_through)}, and you won't be charged again.`,
+    confirm: 'Cancel renewal', cancel: 'Keep my membership', danger: true });
   if (!confirmed) return;
-  try {
-    await api(`/api/v1/me/subscriptions/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
-    notice('Renewal is off. Your paid access remains active through the date shown.');
-    await refreshMembership();
-  } catch (error) { notice(error.message, true); }
+  await api(`/api/v1/me/subscriptions/${encodeURIComponent(subscription.id)}/cancel`, { method: 'POST' });
+  notice(`Renewal cancelled. You keep access until ${date(subscription.paid_through)}.`);
+  await refreshMembership();
 }
-
 
 export { renderDiscovery, selectCommunity, refreshMembership, renderMembership };

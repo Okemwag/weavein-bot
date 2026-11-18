@@ -33,6 +33,13 @@ func (a *app) session(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if user.AllowsWriteToPM {
+		if _, err := a.db.Exec(r.Context(), `INSERT INTO bot_private_contacts(bot_id,telegram_user_id) VALUES($1,$2)
+			ON CONFLICT (bot_id,telegram_user_id) DO UPDATE SET last_contact_at=now()`, a.cfg.botID, user.ID); err != nil {
+			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"token": identity.SignSession(user.ID, a.cfg.sessionSecret, time.Now()), "expires_in": 1800,
 		"telegram_user_id": user.ID, "is_operator": a.cfg.adminTelegramID > 0 && user.ID == a.cfg.adminTelegramID})
 }

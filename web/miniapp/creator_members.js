@@ -1,159 +1,139 @@
-import { state, node, api, date, displayStatus, notice } from './shared.js';
+import { state, node, el, api, date, notice, setAction, setBack, actionButton, field, submitForm, submitButton, fold, confirmSheet, stars, statusPill } from './shared.js';
 
 async function downloadCSV(path, filename) {
-  const response = await fetch(path, { headers: { Authorization: 'Bearer ' + state.token }, cache: 'no-store' });
-  if (!response.ok) throw new Error('Export unavailable (' + response.status + ').');
+  const response = await fetch(path, { headers: { Authorization: `Bearer ${state.token}` }, cache: 'no-store' });
+  if (!response.ok) throw new Error("We couldn't prepare that file. Please try again.");
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement('a');
   link.href = url; link.download = filename; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-function memberPath(communityID, userID) {
-  return '/api/v1/creator/communities/' + encodeURIComponent(communityID)
-    + '/members/' + encodeURIComponent(userID);
+const memberName = (member) => member.first_name || (member.username ? `@${member.username}` : `Member ${member.telegram_user_id}`);
+
+const eventLabels = { payment_verified: 'Payment received', payment_refunded: 'Payment refunded', subscription_canceled: 'Renewal cancelled',
+  subscription_failed: 'Renewal failed', subscription_active: 'Renewal turned back on', cancellation_requested: 'Renewal cancelled',
+  entitlement_expired: 'Membership ended', renewal_canceled_by_system: 'Renewal stopped by MemberOS' };
+
+async function openMemberProfile(content, context, userID) {
+  const memberPath = `${context.root}/members/${encodeURIComponent(userID)}`;
+  const reopen = () => openMemberProfile(content, context, userID);
+  const close = () => { setBack(null); renderMemberDirectory(content, context); };
+  content.replaceChildren(node('p', 'muted', 'Loading member…'));
+  const profile = await api(memberPath);
+  const name = memberName({ ...profile, telegram_user_id: userID });
+  content.replaceChildren(setBack(close, 'All members'),
+    el('div', 'card', node('h1', '', name), node('span', 'muted', `${profile.username ? `@${profile.username} · ` : ''}Telegram ID ${userID}`), statusPill(profile.access_status)));
+  if ((profile.subscriptions || []).length) {
+    const group = node('div', 'group');
+    for (const sub of profile.subscriptions) {
+      group.append(el('div', 'list-row', el('span', 'grow', node('span', 'title', sub.plan || 'Membership'),
+        node('span', 'sub', `Joined ${date(sub.subscribed_at)} · Paid until ${date(sub.paid_through)}`)), statusPill(sub.state)));
+    }
+    content.append(el('div', 'section-title', node('h2', '', 'Membership')), group);
+  }
+  if (profile.mode === 'managed_bot') content.append(await freeAccess(context, userID, reopen));
+  const history = [...(profile.payments || []).map((payment) => node('p', '', `${stars(payment.amount_stars)} on ${date(payment.paid_at)}${payment.refunded_at ? ' (refunded)' : ''}`)),
+    ...(profile.events || []).map((event) => node('p', '', `${eventLabels[event.kind] || 'Membership updated'} on ${date(event.at)}`))];
+  content.append(fold('Payment history', false, ...(history.length ? history : [node('p', '', 'Nothing yet.')])));
+  const form = el('form', 'form', field('Add a note', 'body', { type: 'textarea', maxLength: 2000 }), submitButton('Save note', 'button secondary full'));
+  submitForm(form, async (values) => {
+    await api(`${memberPath}/notes`, { method: 'POST', body: JSON.stringify(values) });
+    notice('Note saved.');
+    await reopen();
+  });
+  content.append(fold(`Private notes (${(profile.private_notes || []).length})`, false, node('p', '', 'Only you can see these. Members never do.'),
+    ...(profile.private_notes || []).map((item) => node('p', '', `${date(item.created_at)}: ${item.body}`)), form));
 }
 
-async function openMemberProfile(communityID, userID, container) {
-  container.replaceChildren(node('p', 'muted', 'Loading member profile…'));
-  try {
-    const profile = await api(memberPath(communityID, userID));
-    container.replaceChildren();
-    const card = node('div', 'detail-card');
-    card.append(node('h2', '', profile.first_name || 'Telegram user ' + userID),
-      node('p', 'muted', 'ID ' + userID + (profile.username ? ' · @' + profile.username : '')),
-      node('p', 'muted', 'Telegram access: ' + displayStatus(profile.access_status)));
-    for (const sub of profile.subscriptions || []) {
-      const item = node('div', 'member-row');
-      item.append(node('strong', '', (sub.plan || 'Legacy plan') + ' · ' + displayStatus(sub.state)),
-        node('small', '', 'Subscribed ' + date(sub.subscribed_at) + ' · Paid through ' + date(sub.paid_through)));
-      card.append(item);
-    }
-    const history = node('details');
-    history.append(node('summary', '', 'Payment and renewal history'));
-    for (const payment of profile.payments || []) {
-      history.append(node('p', '', payment.amount_stars + ' Stars · ' + date(payment.paid_at)
-        + (payment.refunded_at ? ' · Refunded' : '')));
-    }
-    for (const event of profile.events || []) history.append(node('p', 'muted', event.kind + ' · ' + date(event.at)));
-    card.append(history);
-    const notes = node('details');
-    notes.append(node('summary', '', 'Private administrative notes'));
-    for (const item of profile.private_notes || []) notes.append(node('p', '', date(item.created_at) + ' · ' + item.body));
-    const form = node('form', 'setup-form');
-    const body = node('textarea', 'select'); body.required = true; body.maxLength = 2000; body.placeholder = 'Add a private note';
-    const save = node('button', 'button secondary', 'Save note'); save.type = 'submit';
-    form.append(body, save);
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      try {
-        await api(memberPath(communityID, userID) + '/notes', { method: 'POST', body: JSON.stringify({ body: body.value }) });
-        notice('Note saved.'); await openMemberProfile(communityID, userID, container);
-      } catch (error) { notice(error.message, true); }
-    });
-    notes.append(form); card.append(notes); container.append(card);
-    if (profile.mode === 'managed_bot') {
-      const root = '/api/v1/creator/communities/' + encodeURIComponent(communityID) + '/access-overrides';
-      const overrides = await api(root);
-      const access = node('details', 'detail-card');
-      access.append(node('summary', '', 'Temporary access override'));
-      for (const item of overrides.overrides.filter((entry) => entry.telegram_user_id === userID)) {
-        const row = node('div', 'member-row');
-        row.append(node('span', '', (item.active ? 'Active until ' : 'Ended ') + date(item.valid_until) + ' · ' + item.reason));
-        if (item.active) {
-          const revoke = node('button', 'button danger', 'Revoke'); revoke.type = 'button';
-          revoke.addEventListener('click', async () => {
-            if (!window.confirm('Revoke this temporary access? Other paid access will be preserved.')) return;
-            try {
-              await api(root + '/' + encodeURIComponent(item.id) + '/revoke', { method: 'POST' });
-              notice('Override revoked; access will be reconciled.'); await openMemberProfile(communityID, userID, container);
-            } catch (error) { notice(error.message, true); }
-          });
-          row.append(revoke);
-        }
-        access.append(row);
-      }
-      const grant = node('form', 'setup-form');
-      const until = node('input', 'select'); until.type = 'datetime-local'; until.required = true;
-      const reason = node('textarea', 'select'); reason.placeholder = 'Reason for temporary access (10–500 characters)';
-      reason.required = true; reason.minLength = 10; reason.maxLength = 500;
-      const submit = node('button', 'button secondary', 'Grant temporary access'); submit.type = 'submit';
-      grant.append(until, reason, submit);
-      grant.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        try {
-          await api(root, { method: 'POST', body: JSON.stringify({
-            telegram_user_id: userID, valid_until: new Date(until.value).toISOString(), reason: reason.value,
-          }) });
-          notice('Temporary access queued.'); await openMemberProfile(communityID, userID, container);
-        } catch (error) { notice(error.message, true); }
-      });
-      access.append(grant); container.append(access);
-    }
-  } catch (error) { container.replaceChildren(node('div', 'empty', error.message)); }
+async function freeAccess(context, userID, reopen) {
+  const root = `${context.root}/access-overrides`;
+  const data = await api(root);
+  const mine = data.overrides.filter((entry) => entry.telegram_user_id === userID);
+  const active = mine.filter((entry) => entry.active);
+  const body = active.map((item) => el('div', 'list-row', el('span', 'grow', node('span', 'title', `Free until ${date(item.valid_until)}`), node('span', 'sub', item.reason)),
+    actionButton('End now', 'button danger small', async () => {
+      const sure = await confirmSheet({ title: 'End free access now?', body: 'If they have no paid membership, they will be removed from the community.', confirm: 'End free access', danger: true });
+      if (!sure) return;
+      await api(`${root}/${encodeURIComponent(item.id)}/revoke`, { method: 'POST' });
+      notice('Free access ended.');
+      await reopen();
+    })));
+  const days = node('select', 'input'); days.name = 'days'; days.setAttribute('aria-label', 'How long?');
+  for (const value of [7, 14, 30, 90]) {
+    const option = node('option', '', `${value} days`); option.value = value; option.selected = value === 30; days.append(option);
+  }
+  const form = el('form', 'form', el('label', 'field', node('span', '', 'How long?'), days),
+    field('Why are you giving free access?', 'reason', { type: 'textarea', minLength: 10, maxLength: 500, placeholder: 'For example: giveaway winner, or a make-good for an outage.' }),
+    submitButton('Give free access', 'button secondary full'));
+  submitForm(form, async (values) => {
+    const until = new Date(Date.now() + Number(values.days) * 86400000).toISOString();
+    await api(root, { method: 'POST', body: JSON.stringify({ telegram_user_id: userID, valid_until: until, reason: values.reason }) });
+    notice('Free access given. They can now request to join.');
+    await reopen();
+  });
+  return fold('Give free access', active.length > 0, node('p', '', 'Let this person in without paying, for a limited time.'), ...body, form);
 }
 
-function renderMemberDirectory(content, communityID, initial, plans) {
-  const root = '/api/v1/creator/communities/' + encodeURIComponent(communityID);
-  const section = node('div', 'section-heading');
-  section.append(node('h2', '', 'Members'), node('span', 'muted', 'Known to MemberOS'));
-  const form = node('form', 'member-filters');
-  const search = node('input', 'select'); search.placeholder = 'Search name, username or Telegram ID';
-  const status = node('select', 'select');
-  for (const [value, label] of [['', 'All statuses'], ['active', 'Active'], ['cancel_scheduled', 'Canceled renewal'],
-    ['payment_failed', 'Renewal failed'], ['expired', 'Expired'], ['refunded', 'Refunded']]) {
+async function accessIssues(content, context) {
+  if (context.community.mode !== 'managed_bot') return;
+  const data = await api(`${context.root}/access-mismatches`);
+  const issues = data.mismatches.filter((item) => item.failed_job || item.entitled !== ['member', 'restricted', 'administrator', 'creator'].includes(item.observed_status));
+  if (!issues.length) return;
+  const open = (item) => openMemberProfile(content, context, item.telegram_user_id);
+  const group = node('div', 'group');
+  for (const item of issues.slice(0, 20)) {
+    const reason = item.failed_job ? "We couldn't update their access" : item.entitled ? 'Paid, but not in the community yet' : 'In the community without a membership';
+    const row = el('button', 'list-row', el('span', 'grow', node('span', 'title', `Member ${item.telegram_user_id}`), node('span', 'sub', reason)), node('span', 'chevron', '›'));
+    row.type = 'button';
+    row.addEventListener('click', () => open(item).catch((error) => notice(error.message, true)));
+    group.append(row);
+  }
+  content.append(el('div', 'section-title', node('h2', '', 'Needs a look'), node('span', '', String(issues.length))), group,
+    node('p', 'muted', 'People who were already in your chat when you connected it stay in. Give them free access, or remove them yourself in Telegram.'));
+}
+
+async function renderMemberDirectory(content, context) {
+  setAction(null);
+  const plans = await api(`${context.root}/plans`);
+  content.replaceChildren();
+  await accessIssues(content, context);
+  const search = node('input', 'input'); search.type = 'search'; search.placeholder = 'Search by name, @username or ID';
+  search.setAttribute('aria-label', 'Search members');
+  const status = node('select', 'input'); status.setAttribute('aria-label', 'Filter by status');
+  for (const [value, label] of [['', 'Everyone'], ['active', 'Active'], ['cancel_scheduled', 'Ending soon'], ['payment_failed', 'Renewal failed'], ['expired', 'Ended'], ['refunded', 'Refunded']]) {
     const option = node('option', '', label); option.value = value; status.append(option);
   }
-  const plan = node('select', 'select');
+  const plan = node('select', 'input'); plan.setAttribute('aria-label', 'Filter by plan');
   const anyPlan = node('option', '', 'All plans'); anyPlan.value = ''; plan.append(anyPlan);
   for (const item of plans.plans || []) {
     const option = node('option', '', item.name); option.value = item.id; plan.append(option);
   }
-  const searchButton = node('button', 'button secondary', 'Search'); searchButton.type = 'submit';
-  const exportButton = node('button', 'button ghost', 'Export members'); exportButton.type = 'button';
-  form.append(search, status, plan, searchButton, exportButton);
-  const list = node('div', 'member-list');
-  const controls = node('div', 'actions');
-  const profile = node('div');
+  const form = el('form', 'stack', search, el('div', 'metrics', status, plan), node('button', 'button secondary', 'Search'));
+  const query = () => new URLSearchParams({ q: search.value.trim(), status: status.value, plan_id: plan.value });
+  const exporter = actionButton('Export', 'text-button', () => downloadCSV(`${context.root}/members.csv?${query()}`, 'memberos-members.csv'));
+  const list = node('div', 'group');
+  const pager = node('div', 'button-row');
   let offset = 0;
-  const query = () => {
-    const values = new URLSearchParams({ q: search.value.trim(), status: status.value, plan_id: plan.value });
-    return values;
-  };
-  const draw = (data) => {
-    list.replaceChildren(); controls.replaceChildren();
-    if (!data.members.length) list.append(node('div', 'empty', 'No matching members.'));
-    for (const member of data.members) {
-      const row = node('div', 'member-row');
-      const label = node('div');
-      label.append(node('strong', '', member.first_name || 'Telegram user ' + member.telegram_user_id),
-        node('small', '', (member.plan_name ? member.plan_name + ' · ' : '')
-          + displayStatus(member.billing_status || member.access_status)
-          + (member.paid_through ? ' · ' + date(member.paid_through) : '')));
-      const open = node('button', 'button secondary', 'Profile'); open.type = 'button';
-      open.addEventListener('click', () => openMemberProfile(communityID, member.telegram_user_id, profile));
-      row.append(label, open); list.append(row);
-    }
-    if (offset > 0) {
-      const previous = node('button', 'button ghost', 'Previous'); previous.type = 'button';
-      previous.addEventListener('click', () => { offset -= 50; load(); }); controls.append(previous);
-    }
-    if (data.has_more) {
-      const next = node('button', 'button ghost', 'Next'); next.type = 'button';
-      next.addEventListener('click', () => { offset += 50; load(); }); controls.append(next);
-    }
-  };
   const load = async () => {
-    try { const values = query(); values.set('offset', String(offset)); draw(await api(root + '/members?' + values)); }
-    catch (error) { notice(error.message, true); }
+    const values = query(); values.set('offset', String(offset));
+    const data = await api(`${context.root}/members?${values}`);
+    list.replaceChildren(); pager.replaceChildren();
+    if (!data.members.length) list.append(node('div', 'empty', search.value || status.value || plan.value ? 'No members match that search.' : 'Your members will appear here once people join. Share your link from Home to get started.'));
+    for (const member of data.members) {
+      const row = el('button', 'list-row', el('span', 'grow', node('span', 'title', memberName(member)),
+        node('span', 'sub', [member.plan_name, member.paid_through ? `Paid until ${date(member.paid_through)}` : null].filter(Boolean).join(' · '))),
+      statusPill(member.billing_status || member.access_status), node('span', 'chevron', '›'));
+      row.type = 'button';
+      row.addEventListener('click', () => openMemberProfile(content, context, member.telegram_user_id).catch((error) => notice(error.message, true)));
+      list.append(row);
+    }
+    if (offset > 0) pager.append(actionButton('Previous', 'button ghost', async () => { offset -= 50; await load(); }));
+    if (data.has_more) pager.append(actionButton('Next', 'button ghost', async () => { offset += 50; await load(); }));
   };
-  form.addEventListener('submit', (event) => { event.preventDefault(); offset = 0; load(); });
-  exportButton.addEventListener('click', async () => {
-    try { await downloadCSV(root + '/members.csv?' + query(), 'memberos-members.csv'); }
-    catch (error) { notice(error.message, true); }
-  });
-  content.append(node('div', 'divider'), section, form, list, controls, profile);
-  draw(initial);
+  form.addEventListener('submit', (event) => { event.preventDefault(); offset = 0; load().catch((error) => notice(error.message, true)); });
+  content.append(el('div', 'section-title', node('h2', '', 'Members'), exporter), form, list, pager);
+  await load();
 }
 
 export { renderMemberDirectory, downloadCSV };

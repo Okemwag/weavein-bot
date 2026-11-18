@@ -197,7 +197,7 @@ func (a *app) creatorMemberNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
- VALUES($1,'member_note_added',jsonb_build_object('community_id',$2,'member_id',$3,'note_id',$4))`, access.User, access.ID, user, id)
+ VALUES($1,'member_note_added',jsonb_build_object('community_id',$2::uuid,'member_id',$3::bigint,'note_id',$4::uuid))`, access.User, access.ID, user, id)
 	if err != nil || tx.Commit(r.Context()) != nil {
 		http.Error(w, "database error", 500)
 		return

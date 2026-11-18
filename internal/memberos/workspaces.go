@@ -75,10 +75,6 @@ func (a *app) workspaces(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", 500)
 		return
 	}
-	if _, err := tx.Exec(r.Context(), `INSERT INTO creator_users(creator_id,telegram_user_id,role) VALUES($1,$2,'owner')`, creatorID, userID); err != nil {
-		http.Error(w, "database error", 500)
-		return
-	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO workspace_members(workspace_id,telegram_user_id,role) VALUES($1,$2,'owner')`, workspaceID, userID); err != nil {
 		http.Error(w, "database error", 500)
 		return

@@ -32,7 +32,7 @@ func (a *app) processChatMember(ctx context.Context, tx pgx.Tx, updateID int64, 
 	var communityID, creatorID string
 	err := tx.QueryRow(ctx, `SELECT id,creator_id FROM communities WHERE telegram_chat_id=$1`, update.ChatMember.Chat.ID).Scan(&communityID, &creatorID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return eventing.InvalidEvent("unknown community")
+		return eventing.IgnoredEvent("chat is not a connected community")
 	}
 	if err != nil {
 		return err
@@ -70,21 +70,21 @@ func (a *app) processChatMember(ctx context.Context, tx pgx.Tx, updateID int64, 
 			return err
 		}
 		if err == nil {
-			message := fmt.Sprintf("Welcome to %s. Your community access is confirmed. Open the community: %s.", title, joinLink)
+			message := fmt.Sprintf("Welcome to %s! You're in. Open the community: %s", title, joinLink)
 			if rules != "" {
-				message += " Rules: " + rules
+				message += "\n\nRules: " + rules
 			}
 			if guide != "" {
-				message += " Where to begin: " + guide
+				message += "\n\nWhere to begin: " + guide
 			}
-			message += " Support: " + support
+			message += "\n\nNeed help? " + support
 			if err := notify.Queue(ctx, tx, botID, update.ChatMember.New.User.ID, "welcome:"+subID, message); err != nil {
 				return err
 			}
 		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_events(creator_id,subject_telegram_user_id,action,update_id,details)
-		VALUES($1,$2,'chat_member_observed',$3,jsonb_build_object('status',$4))`, creatorID,
+		VALUES($1,$2,'chat_member_observed',$3,jsonb_build_object('status',$4::text))`, creatorID,
 		update.ChatMember.New.User.ID, updateID, update.ChatMember.New.Status)
 	return err
 }

@@ -1,8 +1,10 @@
 package memberos
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,13 +26,13 @@ func (a *app) createSupportTicket(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input) != nil || len(strings.TrimSpace(input.Description)) < 10 || len(input.Description) > 2000 ||
-		(input.Kind != "access" && input.Kind != "payment" && input.Kind != "refund" && input.Kind != "other") {
+		!validUUID(input.CommunityID) || (input.Kind != "access" && input.Kind != "payment" && input.Kind != "refund" && input.Kind != "other") {
 		http.Error(w, "invalid ticket", 400)
 		return
 	}
 	var id string
 	err = a.db.QueryRow(r.Context(), `INSERT INTO support_tickets(community_id,telegram_user_id,kind,description)
-        SELECT c.id,$2,$3,$4 FROM communities c WHERE c.id::text=$1 AND c.status='published'
+        SELECT c.id,$2,$3,$4 FROM communities c WHERE c.id=$1 AND c.status='published'
         RETURNING id`, input.CommunityID, user, input.Kind, strings.TrimSpace(input.Description)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.Error(w, "community not found", 404)
@@ -53,7 +55,7 @@ func (a *app) createRefundRequest(w http.ResponseWriter, r *http.Request) {
 		PaymentID string `json:"payment_id"`
 		Reason    string `json:"reason"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&input) != nil || len(strings.TrimSpace(input.Reason)) < 10 || len(input.Reason) > 1000 {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&input) != nil || !validUUID(input.PaymentID) || len(strings.TrimSpace(input.Reason)) < 10 || len(input.Reason) > 1000 {
 		http.Error(w, "invalid request", 400)
 		return
 	}
@@ -61,14 +63,14 @@ func (a *app) createRefundRequest(w http.ResponseWriter, r *http.Request) {
 	err = a.db.QueryRow(r.Context(), `INSERT INTO refund_requests(payment_id,requested_by,reason)
         SELECT p.id,$2,$3 FROM payments p JOIN subscriptions s ON s.id=p.subscription_id
         JOIN communities c ON c.id=s.community_id
-        WHERE p.id::text=$1 AND s.telegram_user_id=$2 AND p.refunded_at IS NULL AND c.billing_mode='managed_bot'
+        WHERE p.id=$1 AND s.telegram_user_id=$2 AND p.refunded_at IS NULL AND c.billing_mode='managed_bot'
         RETURNING id`, input.PaymentID, user, strings.TrimSpace(input.Reason)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return
 	}
 	if err != nil {
-		http.Error(w, "refund already requested or database error", http.StatusConflict)
+		http.Error(w, "You've already asked for a refund of this payment", http.StatusConflict)
 		return
 	}
 	writeJSON(w, 201, map[string]any{"id": id, "status": "requested"})
@@ -80,10 +82,14 @@ func (a *app) myPayments(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if !validUUID(r.URL.Query().Get("community_id")) {
+		http.Error(w, "invalid community", 400)
+		return
+	}
 	rows, err := a.db.Query(r.Context(), `SELECT p.id,p.price_stars,p.paid_at,p.refunded_at,
         EXISTS(SELECT 1 FROM refund_requests rr WHERE rr.payment_id=p.id AND rr.status IN ('requested','processing','submitted','needs_review'))
         FROM payments p JOIN subscriptions s ON s.id=p.subscription_id
-        WHERE s.telegram_user_id=$1 AND s.community_id::text=$2 ORDER BY p.paid_at DESC LIMIT 50`, user, r.URL.Query().Get("community_id"))
+        WHERE s.telegram_user_id=$1 AND s.community_id=$2 ORDER BY p.paid_at DESC LIMIT 50`, user, r.URL.Query().Get("community_id"))
 	if err != nil {
 		http.Error(w, "database error", 500)
 		return
@@ -151,7 +157,7 @@ func (a *app) adminApproveRefund(w http.ResponseWriter, r *http.Request) {
 	var user, bot int64
 	var charge string
 	err := a.db.QueryRow(r.Context(), `UPDATE refund_requests rr SET status='processing',decided_by=$2,updated_at=now()
-        FROM payments p,subscriptions s WHERE rr.id::text=$1 AND rr.status='requested'
+        FROM payments p,subscriptions s WHERE rr.id=$1 AND rr.status='requested'
         AND p.id=rr.payment_id AND s.id=p.subscription_id AND p.refunded_at IS NULL
         RETURNING s.telegram_user_id,p.billing_bot_id,p.telegram_charge_id`, r.PathValue("id"), admin).Scan(&user, &bot, &charge)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -163,7 +169,7 @@ func (a *app) adminApproveRefund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bot != a.cfg.botID {
-		_, _ = a.db.Exec(r.Context(), `UPDATE refund_requests SET status='needs_review',decision_note='billing bot mismatch',updated_at=now() WHERE id::text=$1`, r.PathValue("id"))
+		_, _ = a.db.Exec(r.Context(), `UPDATE refund_requests SET status='needs_review',decision_note='billing bot mismatch',updated_at=now() WHERE id=$1`, r.PathValue("id"))
 		http.Error(w, "billing bot mismatch", http.StatusConflict)
 		return
 	}
@@ -174,18 +180,18 @@ func (a *app) adminApproveRefund(w http.ResponseWriter, r *http.Request) {
 		status = "needs_review"
 	}
 	_, dbErr := a.db.Exec(r.Context(), `UPDATE refund_requests SET status=$2,decision_note=$3,updated_at=now()
-        WHERE id::text=$1 AND status='processing'`, r.PathValue("id"), status, map[bool]string{true: "Telegram accepted refund request; awaiting refund update", false: "Telegram outcome uncertain; review before further action"}[status == "submitted"])
+        WHERE id=$1 AND status='processing'`, r.PathValue("id"), status, map[bool]string{true: "Telegram accepted refund request; awaiting refund update", false: "Telegram outcome uncertain; review before further action"}[status == "submitted"])
 	if dbErr != nil {
-		http.Error(w, "refund outcome needs manual review", http.StatusServiceUnavailable)
+		http.Error(w, "We couldn't confirm the refund. It's now marked for review, so don't retry until you've checked", http.StatusServiceUnavailable)
 		return
 	}
-	_, _ = a.db.Exec(r.Context(), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
-        VALUES($1,'refund_approval',jsonb_build_object('request_id',$2,'outcome',$3))`, admin, r.PathValue("id"), status)
+	if _, err := a.db.Exec(context.WithoutCancel(r.Context()), `INSERT INTO audit_events(subject_telegram_user_id,action,details)
+        VALUES($1,'refund_approval',jsonb_build_object('request_id',$2::uuid,'outcome',$3::text))`, admin, r.PathValue("id"), status); err != nil {
+		slog.Error("refund approval audit failed", "request_id", r.PathValue("id"), "outcome", status, "error", err)
+	}
 	if status != "submitted" {
-		http.Error(w, "refund outcome needs manual review", http.StatusBadGateway)
+		http.Error(w, "We couldn't confirm the refund. It's now marked for review, so don't retry until you've checked", http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": status})
 }
-
-var _ = pgx.ErrNoRows

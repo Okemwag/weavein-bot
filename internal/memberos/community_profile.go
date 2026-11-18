@@ -20,7 +20,7 @@ func (a *app) community(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN LATERAL (SELECT min(v.price_stars) AS price_stars FROM plans p
 			JOIN LATERAL (SELECT price_stars FROM plan_versions WHERE plan_id=p.id ORDER BY version DESC LIMIT 1) v ON true
 			WHERE p.community_id=c.id AND p.status='active') offered ON true
-		WHERE c.id::text=$1 AND c.status='published'`, r.PathValue("id")).Scan(&id, &title, &description, &creator, &support,
+		WHERE c.id=$1 AND c.status='published'`, r.PathValue("id")).Scan(&id, &title, &description, &creator, &support,
 		&rules, &guide, &category, &mode, &nativeLink, &managedLink, &price, &verified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
